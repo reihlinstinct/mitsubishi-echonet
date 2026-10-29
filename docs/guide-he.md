@@ -136,6 +136,7 @@ mitsubishi-echonet status  --ip 192.168.1.50   # בדיקה (קריאה בלבד
 mitsubishi-echonet enable  --ip 192.168.1.50   # הפעלה
 mitsubishi-echonet disable --ip 192.168.1.50   # כיבוי
 mitsubishi-echonet discover                    # מציאת מכשירי ECHONET ברשת
+mitsubishi-echonet capabilities --ip 192.168.1.50   # יכולות המתאם, כולל טיימרים (קריאה בלבד)
 ```
 
 ## הרצה בקונטיינר (בלי להתקין כלום על המחשב)
@@ -152,6 +153,7 @@ docker run --rm --network host mitsubishi-echonet status  --ip 192.168.1.50
 docker run --rm --network host mitsubishi-echonet enable  --ip 192.168.1.50
 docker run --rm --network host mitsubishi-echonet disable --ip 192.168.1.50
 docker run --rm --network host mitsubishi-echonet discover
+docker run --rm --network host mitsubishi-echonet capabilities --ip 192.168.1.50
 ```
 
 - `--network host` נחוץ בלינוקס כדי שבדיקת ה-UDP (וסריקת ה-multicast של
