@@ -30,7 +30,7 @@ def sh(*args):
 
 
 def fmt_dur(seconds):
-    seconds = int(round(seconds))
+    seconds = round(seconds)
     if seconds < 60:
         return f"{seconds}s"
     return f"{seconds // 60}m {seconds % 60:02d}s"
@@ -72,8 +72,8 @@ def job_durations(env):
     token = env.get("GITHUB_TOKEN", "")
     repo = env.get("GITHUB_REPOSITORY", "")
     run_id = env.get("GITHUB_RUN_ID", "")
-    api = env.get("GITHUB_API_URL", "https://api.github.com")
-    if not repo or not run_id:
+    api = env.get("GITHUB_API_URL", "")
+    if not repo or not run_id or not api:
         return {}
     url = f"{api}/repos/{repo}/actions/runs/{run_id}/jobs?per_page=100"
     req = urllib.request.Request(url)
@@ -91,8 +91,8 @@ def job_durations(env):
         if not started or not completed:
             continue
         try:
-            t0 = datetime.datetime.fromisoformat(started.replace("Z", "+00:00"))
-            t1 = datetime.datetime.fromisoformat(completed.replace("Z", "+00:00"))
+            t0 = datetime.datetime.fromisoformat(started)
+            t1 = datetime.datetime.fromisoformat(completed)
         except ValueError:
             continue
         durations[job.get("name", "")] = (t1 - t0).total_seconds()
@@ -179,14 +179,16 @@ def main():
     env = os.environ
     out = []
     repo = env.get("GITHUB_REPOSITORY", "")
-    server = env.get("GITHUB_SERVER_URL", "https://github.com")
+    server = env.get("GITHUB_SERVER_URL", "")
     sha = env.get("GITHUB_SHA", "")
     workflow = env.get("GITHUB_WORKFLOW", "")
 
     out.append(f"## Run summary - {workflow}\n")
     out.append(f"- Event: `{env.get('GITHUB_EVENT_NAME', '')}`")
-    if repo and sha:
+    if repo and sha and server:
         out.append(f"- Commit: [`{sha[:7]}`]({server}/{repo}/commit/{sha})")
+    elif sha:
+        out.append(f"- Commit: `{sha[:7]}`")
 
     # --- Jobs -------------------------------------------------------------
     needs = {}
@@ -311,5 +313,6 @@ def main():
 if __name__ == "__main__":
     try:
         main()
-    except Exception as exc:  # never fail the workflow over a summary
+    except Exception as exc:  # noqa: BLE001 - deliberate fail-safe: a
+        # summary must never fail the workflow, whatever broke.
         sys.stderr.write(f"run_summary: degraded: {exc}\n")
