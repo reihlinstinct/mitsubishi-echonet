@@ -4,22 +4,60 @@ on:
   push:
     branches: [main]
   pull_request:
+  schedule:
+    # Weekly full suite: Sunday 06:00 Israel time (04:00 UTC, winter offset).
+    - cron: '0 4 * * 0'
 
 permissions: {}
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
 jobs:
+  changes:
+    runs-on: ubuntu-24.04
+    outputs:
+      code: ${{ steps.filter.outputs.code }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - id: filter
+        shell: bash
+        run: |
+          # Docs-only pull requests skip the heavy jobs; the Run summary gate
+          # still runs and reports them as skipped.
+          if [ "${{ github.event_name }}" != "pull_request" ]; then
+            echo "code=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          git diff --name-only "origin/${{ github.base_ref }}...HEAD" | tee /tmp/changed.txt
+          if grep -qvE '\.md$|^docs/|^\.github/(ISSUE_TEMPLATE|PULL_REQUEST_TEMPLATE)' /tmp/changed.txt; then
+            echo "code=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "code=false" >> "$GITHUB_OUTPUT"
+          fi
+
   lint:
+    needs: [changes]
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0
         with:
           python-version: "3.13"
+          cache: pip
+          cache-dependency-path: pyproject.toml
       - run: pip install ruff mypy
       - run: ruff check src tests
       - run: mypy src
 
   test:
+    needs: [changes]
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-24.04
     strategy:
       fail-fast: false
@@ -30,10 +68,14 @@ jobs:
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0
         with:
           python-version: ${{ matrix.python-version }}
+          cache: pip
+          cache-dependency-path: pyproject.toml
       - run: pip install -e . pytest pytest-cov
       - run: pytest
 
   container:
+    needs: [changes]
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
@@ -60,6 +102,29 @@ jobs:
           if docker run --rm --network host mitsubishi-echonet:test set --ip 192.0.2.1 --timeout 1 --mode cool; then
             echo "expected non-zero exit for an unreachable adapter" >&2
             exit 1
+          fi
+
+  weekly-failure-issue:
+    name: Weekly failure issue
+    # Opens (or updates a single open) issue when the scheduled weekly full
+    # suite fails. Test jobs run with the read-only token; only this job gets
+    # issues: write.
+    if: ${{ github.event_name == 'schedule' && failure() }}
+    needs: [lint, test, container]
+    runs-on: ubuntu-24.04
+    permissions:
+      issues: write
+    steps:
+      - name: Open or update one failure issue
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          existing=$(gh issue list --state open --search 'Weekly CI failure in:title' --json number --jq '.[0].number // ""')
+          body="The scheduled weekly full test suite failed: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+          if [ -n "$existing" ]; then
+            gh issue comment "$existing" --body "$body"
+          else
+            gh issue create --title "Weekly CI failure ($(date +%Y-%m-%d))" --body "$body"
           fi
 
   summary:
