@@ -1,0 +1,66 @@
+name: Wiki sync
+
+# Mirrors docs/wiki/ to this repo's GitHub wiki (<repo>.wiki.git).
+# docs/wiki/ is the source of truth - direct wiki UI edits are overwritten.
+# Design: docs/DESIGN-wiki-sync.md
+#
+# Auth: the default GITHUB_TOKEN with job-level `contents: write` pushes to
+# the same repo's .wiki.git. No PAT is used. If GitHub ever refuses the push
+# (403 on .wiki.git), STOP and see the design doc - a fallback PAT requires
+# explicit owner approval before it is created; do not add one here.
+#
+# One-time setup: the wiki git backend does not exist until the Wiki feature
+# is enabled in repo Settings and one first page is saved in the UI. The
+# bootstrap branch below covers the rest.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "docs/wiki/**"
+      - ".github/workflows/wiki-sync.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: wiki-sync
+  cancel-in-progress: true
+
+jobs:
+  sync:
+    permissions:
+      contents: write
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Sync docs/wiki to the GitHub wiki
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          wiki_url="https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.wiki.git"
+          tmp_dir="$(mktemp -d)"
+          if ! git clone "$wiki_url" "$tmp_dir" 2>/dev/null; then
+            echo "::warning::Wiki clone failed - the wiki backend does not exist yet."
+            echo "Enable Settings > Wikis and save one page in the UI, then re-run."
+            exit 1
+          fi
+          rsync -a --delete \
+            --exclude=".git" \
+            --include="*.md" \
+            --exclude="*" \
+            "docs/wiki/" "$tmp_dir/"
+          cd "$tmp_dir"
+          git add -A
+          if git diff --cached --quiet; then
+            echo "No wiki changes to publish."
+            exit 0
+          fi
+          git -c user.name="github-actions[bot]" \
+              -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
+              commit -m "Sync wiki from docs/wiki @ ${GITHUB_SHA::7}"
+          git push origin HEAD:master
+          echo "::notice::Wiki synced from docs/wiki/ at ${GITHUB_SHA::7}"

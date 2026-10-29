@@ -50,9 +50,10 @@ entry point.
 
 1. Check out the repo.
 2. Clone `https://github.com/<owner>/<repo>.wiki.git`. If the clone fails, the
-   wiki was never initialized - GitHub only creates the wiki git backend after
-   the first page exists - so the workflow initializes it with a stub
-   `Home.md` before mirroring.
+   wiki backend does not exist yet: GitHub only creates it after the Wiki
+   feature is enabled and one first page is saved in the UI. That is a
+   one-time manual step per repo; the workflow stops with instructions until
+   it is done, and takes over from there.
 3. Mirror `docs/wiki/` into the wiki clone (`rsync -a --delete`, Markdown
    files only, including `_Sidebar.md` / `_Footer.md`).
 4. Commit and push only when there is a diff; commit message records the
@@ -90,15 +91,15 @@ the implementation PRs do on their own.
 
 "Enabled" is the repo setting; "initialized" means the `.wiki.git` backend
 exists (it does not, on any candidate repo - no pages have ever been created).
-Enabling the feature (Settings -> Wiki) is the only settings change and
-happens once per repo; the sync workflow handles initialization from there.
+Enabling the feature (Settings -> Wiki) and saving one first page is the
+only settings/UI change and happens once per repo; the sync workflow handles
+everything from there.
 
 ## Free plan limits
 
 Wikis, like Pages, require a **public** repository on the free plan, and
-Actions minutes are free for public repos. Private repos are therefore out of
-scope - `parking-reports`, `parking-reporter-android`, `family-tree`,
-`kurrent-reader` and the other private repos get no wiki work. This also
+Actions minutes are free for public repos. Private repos are therefore out
+of scope and get no wiki work. This also
 matches the standing rule that public content carries no private data: every
 `docs/wiki/` page is public on the web.
 
