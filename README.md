@@ -1,0 +1,90 @@
+# mitsubishi-echonet
+
+[![CI](https://github.com/reihlinstinct/mitsubishi-echonet/actions/workflows/ci.yml/badge.svg)](https://github.com/reihlinstinct/mitsubishi-echonet/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+
+Enable, disable and verify **local ECHONET Lite control** on Mitsubishi Electric
+Wi-Fi adapters (MAC-577IF-E, MAC-577IF2-E, MAC-587IF-E and relatives) that ship
+with ECHONET Lite compiled in but switched off outside Japan and AU/NZ.
+
+Once enabled, the air conditioner is fully controllable on the home network over
+UDP 3610 - no cloud - through anything that speaks ECHONET Lite: Home Assistant
+(`echonetlite_homeassistant`), Homebridge (`homebridge-echonet-hvac`, for Apple
+HomeKit), and others. MELCloud / MELCloud Home keeps working in parallel.
+
+Hebrew step-by-step guide: [docs/guide-he.md](docs/guide-he.md).
+Design and protocol notes: [docs/DESIGN.md](docs/DESIGN.md).
+
+## Safety and fair warning
+
+- **Unofficial.** The enable command uses the adapter's unauthenticated local
+  `/smart` service endpoint with the factory-default command key. Mitsubishi
+  could change this in a firmware update. If that happens, re-run `enable` or
+  see the design doc.
+- **ECHONET Lite has no authentication and no encryption.** Any device that can
+  reach UDP 3610 can control the AC. Only do this on a trusted home network.
+- **Whole degrees only.** ECHONET Lite sets temperature in whole °C.
+- The adapter tells MELCloud that ECHONET was enabled. MELCloud keeps working;
+  blocking the adapter from the internet stops that (and stops MELCloud).
+
+## Install
+
+Requires Python 3.10+ and nothing else (standard library only):
+
+```bash
+pipx install git+https://github.com/reihlinstinct/mitsubishi-echonet.git
+# or: pip install git+https://github.com/reihlinstinct/mitsubishi-echonet.git
+```
+
+## Usage
+
+The machine must be on the same LAN as the adapter.
+
+```bash
+# Read-only check before touching anything: reachable? ECHONET already on?
+mitsubishi-echonet status --ip 192.168.1.50
+
+# Enable local control
+mitsubishi-echonet enable --ip 192.168.1.50
+
+# Verify (adapter now answers ECHONET Lite probes on UDP 3610)
+mitsubishi-echonet status --ip 192.168.1.50
+
+# Turn it back off
+mitsubishi-echonet disable --ip 192.168.1.50
+
+# Find all ECHONET Lite devices on the network
+mitsubishi-echonet discover
+```
+
+Don't want to install anything? The enable/disable steps are single curl
+commands - see [docs/guide-he.md](docs/guide-he.md) (Hebrew) or the source of
+`src/mitsubishi_echonet/smart.py` (payload constants with provenance).
+
+## How it works
+
+Short version: `enable`/`disable` POST an encrypted XML service command to
+`http://<adapter>/smart` (the one route that needs no password); `status` and
+`discover` send ECHONET Lite GET frames to UDP 3610 and parse the replies.
+Long version, with sources: [docs/DESIGN.md](docs/DESIGN.md).
+
+## Development
+
+```bash
+pip install -e . pytest pytest-cov ruff mypy
+pytest        # unit tests, 80% coverage floor
+ruff check src tests
+mypy src
+```
+
+## Credits
+
+Built on open community research - full list in [docs/DESIGN.md](docs/DESIGN.md):
+the `/smart` enable method (mafredri, echonetlite_homeassistant issue #226),
+the underlying protocol reverse-engineering (ncaunt/meldec issue #2,
+dragonbane0, niobos), and melsmart (mafredri/meltools) whose `-disable-echonet`
+command our disable payload matches.
+
+## License
+
+MIT - see [LICENSE](LICENSE).
