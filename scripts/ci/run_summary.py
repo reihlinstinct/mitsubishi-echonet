@@ -313,6 +313,13 @@ def _self_test():
                           {"before": "abc", "after": "0" * 40}) is None
     assert changed_ranges({"GITHUB_EVENT_NAME": "push"},
                           {"before": "0" * 40, "after": "def"}) is None
+    assert "deleted the ref" in _no_range_reason(
+        {"GITHUB_EVENT_NAME": "push"}, {"before": "abc", "after": "0" * 40})
+    assert _no_range_reason({"GITHUB_EVENT_NAME": "push"},
+                            {"before": "0" * 40, "after": "def"}) == \
+        "No change range is available for this run."
+    assert _no_range_reason({"GITHUB_EVENT_NAME": "workflow_dispatch"},
+                            {}) == "No change range is available for this run."
 
 
 
@@ -352,6 +359,15 @@ def changed_ranges(env, event):
                 and after and set(after) != {"0"}):
             return f"{before}..{after}", f"{before}..{after}"
     return None
+
+
+def _no_range_reason(env, event):
+    """Why there is no change range, for the summary body."""
+    if env.get("GITHUB_EVENT_NAME", "") == "push" \
+            and set(event.get("after", "") or "0") == {"0"}:
+        return ("This push deleted the ref (`after` is all zeros), "
+                "so there is no change range to diff.")
+    return "No change range is available for this run."
 
 
 def load_map():
@@ -472,8 +488,7 @@ def main():
                        "(shallow history or missing base).")
     else:
         out.append("\n### What changed in this run\n")
-        out.append("Not a push or pull_request run, so there is no change "
-                   "range to diff.")
+        out.append(_no_range_reason(env, event))
 
     # --- Coverage ---------------------------------------------------------
     if files:
