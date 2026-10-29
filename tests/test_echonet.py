@@ -16,6 +16,7 @@ from mitsubishi_echonet.echonet import (
     EchonetFrame,
     EchonetProperty,
     FrameError,
+    ProbeResult,
 )
 
 
@@ -208,3 +209,71 @@ class TestTcpReachable:
             assert echonet.tcp_reachable("127.0.0.1", port, timeout=1.0) is True
         finally:
             server.close()
+
+
+class TestParsePropertyMap:
+    def test_empty(self) -> None:
+        assert echonet.parse_property_map(b"") == []
+
+    def test_short_list(self) -> None:
+        edt = bytes([3, 0x80, 0xB3, 0xBB])
+        assert echonet.parse_property_map(edt) == [0x80, 0xB3, 0xBB]
+
+    def test_short_list_truncated(self) -> None:
+        # Count claims 5 but only 2 EPC bytes present: keep what is there.
+        assert echonet.parse_property_map(bytes([5, 0x80, 0xB0])) == [0x80, 0xB0]
+
+    def test_bitmap(self) -> None:
+        # 16+ properties: 16-byte bitmap, bit j (LSB first) of byte i is
+        # EPC 0x80 + 0x10*j + i. Set 0x80 (byte 0 bit 0), 0xB3 (byte 3 bit 3),
+        # and 0x9F (byte 15 bit 1).
+        bitmap = bytearray(16)
+        bitmap[0] = 0x01
+        bitmap[3] = 0x08
+        bitmap[15] = 0x02
+        edt = bytes([16]) + bytes(bitmap)
+        assert echonet.parse_property_map(edt) == [0x80, 0xB3, 0x9F]
+
+    def test_bitmap_full(self) -> None:
+        edt = bytes([16]) + b"\xff" * 16
+        epcs = echonet.parse_property_map(edt)
+        assert len(epcs) == 128
+        assert set(epcs) == set(range(0x80, 0x100))
+
+
+class TestReadPropertyMaps:
+    def _map_reply(self, epc: int, edt: bytes) -> ProbeResult:
+        frame = EchonetFrame(
+            tid=1,
+            seoj=EOJ_HOME_AIR_CONDITIONER,
+            deoj=EOJ_CONTROLLER,
+            esv=ESV_GET_RES,
+            properties=(echonet.EchonetProperty(epc, edt),),
+        )
+        return ProbeResult(address="192.0.2.10", port=3610, frame=frame)
+
+    def test_decodes_each_map(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        def fake_query(ip: str, *, tid: int, deoj: int, epc: int, timeout: float):
+            assert ip == "192.0.2.10"
+            return self._map_reply(epc, bytes([2, 0x80, 0xB0]))
+
+        monkeypatch.setattr(echonet, "query", fake_query)
+        maps = echonet.read_property_maps("192.0.2.10")
+        assert maps == {
+            echonet.EPC_STATUS_CHANGE_MAP: [0x80, 0xB0],
+            echonet.EPC_SET_PROPERTY_MAP: [0x80, 0xB0],
+            echonet.EPC_GET_PROPERTY_MAP: [0x80, 0xB0],
+        }
+
+    def test_no_reply_is_none(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr(echonet, "query", lambda *a, **kw: None)
+        maps = echonet.read_property_maps("192.0.2.10")
+        assert all(value is None for value in maps.values())
+
+    def test_reply_without_map_epc_stays_none(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        def fake_query(ip: str, **kw):
+            return self._map_reply(0x80, b"\x30")
+
+        monkeypatch.setattr(echonet, "query", fake_query)
+        maps = echonet.read_property_maps("192.0.2.10")
+        assert all(value is None for value in maps.values())

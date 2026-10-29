@@ -92,3 +92,45 @@ class TestDiscover:
         monkeypatch.setattr(echonet, "discover", lambda **kw: [])
         assert cli.main(["discover"]) == 1
         assert "No ECHONET Lite devices" in capsys.readouterr().out
+
+
+class TestCapabilitiesCommand:
+    def _maps(self, get_map: list[int], set_map: list[int] | None = None) -> dict:
+        return {
+            echonet.EPC_STATUS_CHANGE_MAP: [0x80],
+            echonet.EPC_SET_PROPERTY_MAP: get_map if set_map is None else set_map,
+            echonet.EPC_GET_PROPERTY_MAP: get_map,
+        }
+
+    def test_lists_properties_and_timers(self, monkeypatch: MP, capsys: Cap) -> None:
+        monkeypatch.setattr(
+            echonet,
+            "read_property_maps",
+            lambda ip, **kw: self._maps([0x80, 0x90, 0x91, 0xB0, 0xB3]),
+        )
+        assert cli.main(["capabilities", "--ip", "192.0.2.10"]) == 0
+        out = capsys.readouterr().out
+        assert "0xb0 operation mode" in out
+        assert "Timer properties exposed:" in out
+        assert "0x90 ON-timer reservation" in out
+
+    def test_no_timers_reported(self, monkeypatch: MP, capsys: Cap) -> None:
+        monkeypatch.setattr(
+            echonet, "read_property_maps", lambda ip, **kw: self._maps([0x80, 0xB0, 0xB3])
+        )
+        assert cli.main(["capabilities", "--ip", "192.0.2.10"]) == 0
+        assert "No ECHONET timer properties" in capsys.readouterr().out
+
+    def test_no_reply_reachable(self, monkeypatch: MP, capsys: Cap) -> None:
+        none_maps = {epc: None for epc in (0x9D, 0x9E, 0x9F)}
+        monkeypatch.setattr(echonet, "read_property_maps", lambda ip, **kw: none_maps)
+        monkeypatch.setattr(echonet, "tcp_reachable", lambda *a, **kw: True)
+        assert cli.main(["capabilities", "--ip", "192.0.2.10"]) == 1
+        assert "ECHONET Lite is OFF" in capsys.readouterr().out
+
+    def test_no_reply_unreachable(self, monkeypatch: MP, capsys: Cap) -> None:
+        none_maps = {epc: None for epc in (0x9D, 0x9E, 0x9F)}
+        monkeypatch.setattr(echonet, "read_property_maps", lambda ip, **kw: none_maps)
+        monkeypatch.setattr(echonet, "tcp_reachable", lambda *a, **kw: False)
+        assert cli.main(["capabilities", "--ip", "192.0.2.10"]) == 1
+        assert "offline or wrong IP" in capsys.readouterr().err
