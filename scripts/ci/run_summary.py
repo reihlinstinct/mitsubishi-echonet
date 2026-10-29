@@ -200,7 +200,7 @@ def _self_test():
     assert md_escape("a\u2028b\u2029c") == "a b c"
     # the forged-row scenario: U+2028 in a subject must not split the
     # log line, and any remaining fragment stays escaped literal text
-    forged = "deadbee real \u2028` | [x](http://evil) | forged"
+    forged = "deadbee real \u2028` | [x](/forged-link) | forged"
     assert forged.split("\n") == [forged]
     short, _, subject = forged.partition(" ")
     rendered = f"- `{short}` {md_escape(subject)}"
