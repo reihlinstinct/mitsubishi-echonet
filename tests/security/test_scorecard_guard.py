@@ -87,6 +87,14 @@ class GuardTests(unittest.TestCase):
             findings=g.scan(p)
             self.assertIn('first.txt',{f.path for f in findings if f.rule=='unhashed-requirement'})
             self.assertNotIn('second.txt',{f.path for f in findings if f.rule=='unhashed-requirement'})
+    def test_requirement_hashes_with_pip_global_options(self):
+        for command in ['python -m pip --disable-pip-version-check install', 'pip --no-cache-dir install', 'python3.13 -m pip --no-cache-dir install']:
+            with self.subTest(command=command), tempfile.TemporaryDirectory() as d:
+                root=Path(d);(root/'.github/workflows').mkdir(parents=True)
+                (root/'.github/workflows/test.yml').write_text('permissions: {}\nrun: '+command+' --require-hashes -rfirst.txt --requirement=second.txt\n')
+                (root/'first.txt').write_text('x>=1\n')
+                (root/'second.txt').write_text('y==1 --hash=sha256:'+'a'*64+'\n')
+                self.assertEqual({f.path for f in g.scan(root) if f.rule=='unhashed-requirement'}, {'first.txt'})
     def test_multiple_concatenated_requirement_files(self):
         with tempfile.TemporaryDirectory() as d:
             root=Path(d);(root/'.github/workflows').mkdir(parents=True)
