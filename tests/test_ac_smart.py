@@ -186,6 +186,19 @@ class TestSummarize:
         assert "remote-lock off" in out
         assert "remote-lock 0" not in out
 
+    def test_power_saving_shown_explicitly(self) -> None:
+        code = self._code(0x02, {8: 1})
+        out = ac_smart.summarize(f"<LSV><CODE><VALUE>{code}</VALUE></CODE></LSV>")
+        assert "power-saving off" in out
+        code = self._code(0x02, {8: 1, 18: 1})
+        out = ac_smart.summarize(f"<LSV><CODE><VALUE>{code}</VALUE></CODE></LSV>")
+        assert "power-saving on" in out
+
+    def test_buzzer_no_state_line(self) -> None:
+        code = self._code(0x02, {8: 1})
+        out = ac_smart.summarize(f"<LSV><CODE><VALUE>{code}</VALUE></CODE></LSV>")
+        assert "buzzer: command only (no state in status)" in out
+
 
 @pytest.fixture()
 def mock_adapter():
