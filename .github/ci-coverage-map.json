@@ -22,6 +22,19 @@
       ]
     },
     {
+      "pattern": "docker/**",
+      "checks": [
+        "container"
+      ]
+    },
+    {
+      "pattern": "scripts/ac_smart.py",
+      "checks": [
+        "test",
+        "container"
+      ]
+    },
+    {
       "pattern": "pyproject.toml",
       "checks": [
         "lint",

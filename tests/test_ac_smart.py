@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import importlib.util
+import json
 import socket
 import threading
 from http.server import BaseHTTPRequestHandler, HTTPServer
@@ -137,7 +138,8 @@ class TestSummarize:
         assert "AC: power off, mode dry, set 25 C, fan auto, vane V2/left" in out
         assert "sensors: room 23.5 C" in out
         assert "error: none" in out
-        assert "energy: idle, now 0 W, lifetime 0 kWh" in out
+        assert "energy: idle, now 0 W, cumulative 0 kWh" in out
+        assert "some adapters never report cumulative energy" in out
         assert "auto mode: off, demand level 0" in out
 
     def _code(self, kind: int, fill: dict[int, int], length: int = 22) -> str:
@@ -295,3 +297,224 @@ class TestEchonetTest:
         rc = ac_smart.main(["--ip", "127.0.0.1", "--timeout", "0.3", "echonet-test"])
         assert rc == 1
         assert "No ECHONET reply" in capsys.readouterr().out
+
+
+class TestControlFrames:
+    """Byte-identical frames vs pymitsubishi 0.6.1 command generators.
+
+    Expected hex generated with pymitsubishi's GeneralStates/generate_general_command
+    and generate_extend08_command from the same logical state (power off, mode dry,
+    set 25.0 C, fan auto, vane V2/left, unlocked - the state the real unit reported).
+    """
+
+    STATE = {
+        "power": 0,
+        "mode": 2,
+        "temp": 25.0,
+        "fine": True,
+        "fan": 0,
+        "vane_v": 2,
+        "remote_lock": 0,
+        "vane_h": 2,
+        "dehum": 0,
+        "power_saving": False,
+        "wind_break": 0,
+    }
+
+    def frame(self, controls, **over):
+        state = dict(self.STATE)
+        state.update(over)
+        return ac_smart.general_command_frame(state, controls).hex()
+
+    def frame08(self, controls08, **over):
+        state = dict(self.STATE)
+        state.update(over)
+        return ac_smart.extend08_command_frame(state, controls08).hex()
+
+    def test_mode_cool(self):
+        assert self.frame(0x0200, mode=3) == "fc410130100102020003060002000000000002b24179"
+
+    def test_mode_auto_sent_as_8(self):
+        assert self.frame(0x0200, mode=8) == "fc410130100102020008060002000000000002b24174"
+
+    def test_temp_half_degree(self):
+        assert self.frame(0x0400, temp=24.5) == "fc410130100104020002070002000000000002b14178"
+
+    def test_temp_min_16(self):
+        assert self.frame(0x0400, temp=16.0) == "fc4101301001040200020f0002000000000002a04181"
+
+    def test_fan_s3(self):
+        assert self.frame(0x0800, fan=3) == "fc410130100108020002060302000000000002b24171"
+
+    def test_fan_full(self):
+        assert self.frame(0x0800, fan=6) == "fc410130100108020002060602000000000002b2416e"
+
+    def test_vane_v_swing(self):
+        assert self.frame(0x1000, vane_v=7) == "fc410130100110020002060007000000000002b24167"
+
+    def test_vane_h_far_right(self):
+        assert self.frame(0x0001, vane_h=5) == "fc410130100100030002060002000000000005b24178"
+
+    def test_vane_h_swing(self):
+        assert self.frame(0x0001, vane_h=12) == "fc41013010010003000206000200000000000cb24171"
+
+    def test_remote_lock_power_plus_mode(self):
+        assert self.frame(0x4000, remote_lock=3) == "fc410130100140020002060002000000030002b24139"
+
+    def test_combo_power_mode_temp_fan(self):
+        frame = self.frame(0x0100 | 0x0200 | 0x0400 | 0x0800, power=1, mode=1, temp=21.5, fan=2)
+        assert frame == "fc41013010010f0201010a0202000000000002ab416e"
+
+    def test_dehum(self):
+        assert self.frame08(0x04, dehum=50) == "fc410130100804000032000000000000000000000040"
+
+    def test_power_saving_on(self):
+        assert (
+            self.frame08(0x08, power_saving=True) == "fc4101301008080000000a0000000000000000000064"
+        )
+
+    def test_power_saving_off(self):
+        assert (
+            self.frame08(0x08, power_saving=False) == "fc41013010080800000000000000000000000000006e"
+        )
+
+    def test_buzzer(self):
+        assert self.frame08(0x10) == "fc410130100810000000000001000000000000000065"
+
+    def test_dehum_and_power_saving(self):
+        assert self.frame08(0x04 | 0x08, dehum=60, power_saving=True) == (
+            "fc41013010080c00003c0a0000000000000000000024"
+        )
+
+    def test_remote_lock_parse(self):
+        assert ac_smart._parse_remote_lock("unlock") == 0
+        assert ac_smart._parse_remote_lock("power,temp") == 5
+        with pytest.raises(ValueError):
+            ac_smart._parse_remote_lock("bogus")
+
+
+class TestSetCommand:
+    """cmd_set against the mock adapter: fetches state first, then sends
+    frames byte-identical to pymitsubishi for that fetched state (power on,
+    cool, 24.0 C, fan/vanes auto - the CANNED_LSV fixture)."""
+
+    EXPECTED = {
+        ("--mode", "heat"): "fc410130100102020101070000000000000000b0417f",
+        ("--fan", "s3"): "fc410130100108020103070300000000000000b04174",
+        ("--temp", "22.5"): "fc410130100104020103090000000000000000ad417c",
+    }
+
+    def _sent_frames(self, mock_adapter: str, argv: list[str]) -> list[str]:
+        frames: list[str] = []
+
+        class Handler(BaseHTTPRequestHandler):
+            def do_POST(self) -> None:
+                body = self.rfile.read(int(self.headers["Content-Length"])).decode()
+                b64 = body.split("<ESV>")[1].split("</ESV>")[0]
+                plain = ac_smart.decrypt_xml(b64)
+                if "<CODE>" in plain:
+                    frames.append(plain.split("<VALUE>")[1].split("</VALUE>")[0])
+                resp = f'<?xml version="1.0"?><ESV>{ac_smart.encrypt_xml(CANNED_LSV)}</ESV>'
+                self.send_response(200)
+                self.send_header("Content-Length", str(len(resp)))
+                self.end_headers()
+                self.wfile.write(resp.encode())
+
+            def log_message(self, *args: object) -> None:
+                pass
+
+        server = HTTPServer(("127.0.0.1", 0), Handler)
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+        try:
+            rc = ac_smart.main(["--ip", f"127.0.0.1:{server.server_port}", *argv])
+        finally:
+            server.shutdown()
+        assert rc == 0
+        return frames
+
+    def test_each_general_option_byte_identical(self, mock_adapter: str) -> None:
+        for argv, expected in self.EXPECTED.items():
+            frames = self._sent_frames(mock_adapter, ["set", *argv])
+            assert frames == [expected]
+
+    def test_extend08_dehum_byte_identical(self, mock_adapter: str) -> None:
+        frames = self._sent_frames(mock_adapter, ["set", "--dehum", "50"])
+        assert frames == ["fc410130100804000032000000000000000000000040"]
+
+    def test_general_plus_extend08_sends_both(self, mock_adapter: str) -> None:
+        frames = self._sent_frames(
+            mock_adapter, ["set", "--fan", "s3", "--power-saving", "on"]
+        )
+        assert frames == [
+            "fc410130100108020103070300000000000000b04174",
+            "fc4101301008080000000a0000000000000000000064",
+        ]
+
+    def test_nothing_to_set(self, mock_adapter: str, capsys: pytest.CaptureFixture[str]) -> None:
+        assert ac_smart.main(["--ip", mock_adapter, "set"]) == 1
+        assert "nothing to set" in capsys.readouterr().err
+
+    def test_bad_temp_rejected_before_any_frame(self, mock_adapter: str) -> None:
+        assert ac_smart.main(["--ip", mock_adapter, "set", "--temp", "33"]) == 1
+        assert ac_smart.main(["--ip", mock_adapter, "set", "--temp", "24.25"]) == 1
+        assert ac_smart.main(["--ip", mock_adapter, "set", "--temp", "15.5"]) == 1
+
+    def test_bad_remote_lock_rejected(self, mock_adapter: str) -> None:
+        assert ac_smart.main(["--ip", mock_adapter, "set", "--remote-lock", "bogus"]) == 1
+
+
+# Status XML with the user's real captured CODE frames (dry, 25 C, room 23.5 C,
+# all-zero energy fields) for monitor tests.
+STATUS_XML = "<LSV>" + "".join(
+    f"<CODE><VALUE>{c}</VALUE></CODE>" for c in TestSummarize.REAL_CODES
+) + "</LSV>"
+
+
+class TestMonitor:
+    def _args(self, out: str, count: int = 2, interval: float = 10.0):
+        return ac_smart.argparse.Namespace(
+            ip="x", timeout=1.0, interval=interval, out=out, count=count, format=None
+        )
+
+    def test_csv(self, tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr(ac_smart, "post_smart", lambda *a, **k: STATUS_XML)
+        out = tmp_path / "log.csv"
+        assert ac_smart.cmd_monitor(self._args(str(out)), sleep=lambda s: None) == 0
+        lines = out.read_text().splitlines()
+        assert lines[0] == (
+            "timestamp,operating,power_w,energy_kwh,ac_power,mode,set_temp_c,room_temp_c"
+        )
+        assert len(lines) == 3
+        assert lines[1].endswith(",off,dry,25,23.5")
+        assert ",0,0," in lines[1]
+
+    def test_jsonl_by_extension(self, tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr(ac_smart, "post_smart", lambda *a, **k: STATUS_XML)
+        out = tmp_path / "log.jsonl"
+        assert ac_smart.cmd_monitor(self._args(str(out)), sleep=lambda s: None) == 0
+        rows = [json.loads(line) for line in out.read_text().splitlines()]
+        assert len(rows) == 2
+        assert rows[0]["mode"] == "dry"
+        assert rows[0]["power_w"] == 0
+        assert rows[0]["room_temp_c"] == "23.5"
+
+    def test_interval_floor(self, tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr(ac_smart, "post_smart", lambda *a, **k: STATUS_XML)
+        with pytest.raises(ValueError):
+            ac_smart.cmd_monitor(
+                self._args(str(tmp_path / "x.csv"), interval=5.0), sleep=lambda s: None
+            )
+
+    def test_poll_failure_is_skipped(self, tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
+        calls = []
+
+        def flaky(*a: object, **k: object) -> str:
+            calls.append(1)
+            if len(calls) == 1:
+                raise OSError("boom")
+            return STATUS_XML
+
+        monkeypatch.setattr(ac_smart, "post_smart", flaky)
+        out = tmp_path / "log.csv"
+        assert ac_smart.cmd_monitor(self._args(str(out), count=1), sleep=lambda s: None) == 0
+        assert len(out.read_text().splitlines()) == 2  # header + one good sample

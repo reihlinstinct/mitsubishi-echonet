@@ -146,6 +146,26 @@ mitsubishi-echonet capabilities --ip 192.168.1.50   # יכולות המתאם, �
 python3 scripts/ac_smart.py --ip 192.168.1.50 status   # מצב מלא (קריאה בלבד)
 python3 scripts/ac_smart.py --ip 192.168.1.50 on       # הדלקה (שומר מצב/טמפ' אחרונים)
 python3 scripts/ac_smart.py --ip 192.168.1.50 off      # כיבוי
+
+# set קורא את המצב הנוכחי קודם ומשנה רק מה שמבקשים:
+python3 scripts/ac_smart.py set --ip 192.168.1.50 --mode cool --temp 24 --fan auto
+python3 scripts/ac_smart.py set --ip 192.168.1.50 --vane-v swing --vane-h center
+python3 scripts/ac_smart.py set --ip 192.168.1.50 --dehum 50 --power-saving on
+
+# monitor דוגם צריכה (W) וצריכה מצטברת (kWh) וכותב לקובץ CSV/JSON:
+python3 scripts/ac_smart.py monitor --ip 192.168.1.50 --out energy.csv --interval 30
+```
+
+`set` מכסה את כל מה שאפשר לשלוט בו בפרוטוקול: מצב (auto/heat/dry/cool/fan),
+טמפרטורה (16.0-31.0 בצעדי חצי מעלה), מאוורר (auto/s1-s4/full), שתי הוונות,
+רמת ייבוש, חיסכון בחשמל, נעילת שלט וצפצוף. בקונטיינר הפקודות זהות, רק ש-status
+של /smart נקרא smart-status (ה-status הרגיל של ה-CLI נשאר מבוסס ECHONET):
+
+```bash
+docker run --rm --network host mitsubishi-echonet smart-status --ip 192.168.1.50
+docker run --rm --network host mitsubishi-echonet on --ip 192.168.1.50
+docker run --rm --network host mitsubishi-echonet set --ip 192.168.1.50 --mode cool --temp 24
+docker run --rm --network host -v ./data:/data mitsubishi-echonet monitor --ip 192.168.1.50 --out /data/energy.csv
 ```
 
 ## הרצה בקונטיינר (בלי להתקין כלום על המחשב)
