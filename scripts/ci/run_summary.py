@@ -122,45 +122,64 @@ def _job_display_name(raw):
     return None if "${{" in name else name
 
 
+def _parse_job_meta_lines(lines):
+    """(job id -> `if:` expression, job id -> static display name) parsed
+    from workflow file lines. Only a nonblank, noncomment column-0 line
+    ends the jobs block: blank lines and column-0 comments between jobs
+    are common and must not drop the later jobs."""
+    conditions = {}
+    names = {}
+    current = None
+    in_jobs = False
+    for line in lines:
+        if re.match(r"^jobs:\s*$", line):
+            in_jobs = True
+            continue
+        if in_jobs:
+            m = re.match(r"^  ([A-Za-z0-9_.-]+):\s*$", line)
+            if m:
+                current = m.group(1)
+                continue
+            stripped = line.strip()
+            if stripped and not stripped.startswith("#") \
+                    and not line.startswith(" "):
+                in_jobs = False
+                current = None
+                continue
+            m = re.match(r"^    if:\s*(.+?)\s*$", line)
+            if m and current:
+                conditions[current] = m.group(1)
+                continue
+            m = re.match(r"^    name:\s*(.+?)\s*$", line)
+            if m and current:
+                name = _job_display_name(m.group(1))
+                if name:
+                    names[current] = name
+    return conditions, names
+
+
 def load_job_meta(env):
-    """(job id -> `if:` expression, job id -> static display name), parsed
-    from the workflow file. Job-level keys sit at 4-space indent; `name:`
-    values containing expressions are skipped (not statically knowable)."""
+    """Job metadata parsed from the workflow file named by
+    GITHUB_WORKFLOW_REF."""
     ref = env.get("GITHUB_WORKFLOW_REF", "")
     path = ref.split("@")[0].split("/", 2)[-1] if "@" in ref else ""
     if not path or not os.path.exists(path):
         return {}, {}
-    conditions = {}
-    names = {}
-    current = None
     try:
         with open(path, encoding="utf-8") as fh:
-            in_jobs = False
-            for line in fh:
-                if re.match(r"^jobs:\s*$", line):
-                    in_jobs = True
-                    continue
-                if in_jobs:
-                    m = re.match(r"^  ([A-Za-z0-9_.-]+):\s*$", line)
-                    if m:
-                        current = m.group(1)
-                        continue
-                    if line and not line.startswith(" "):
-                        in_jobs = False
-                        current = None
-                        continue
-                    m = re.match(r"^    if:\s*(.+?)\s*$", line)
-                    if m and current:
-                        conditions[current] = m.group(1)
-                        continue
-                    m = re.match(r"^    name:\s*(.+?)\s*$", line)
-                    if m and current:
-                        name = _job_display_name(m.group(1))
-                        if name:
-                            names[current] = name
+            return _parse_job_meta_lines(fh)
     except OSError:
         return {}, {}
-    return conditions, names
+
+
+def _log_rows(log):
+    """(short hash, subject) per raw git-log record. The byte split on
+    b"\n" happens before decoding, so CR/U+2028/U+2029 in a subject
+    cannot forge an extra row."""
+    for raw in log.split(b"\n") or [b"(none)"]:
+        line = raw.decode("utf-8", "replace")
+        short, _, subject = line.partition(" ")
+        yield short, subject
 
 
 def duration_for(job_id, durations, display_names):
@@ -239,6 +258,24 @@ def _self_test():
         "Build things"
     assert _job_display_name("Test (${{ matrix.py }})") is None
     assert b"a \rb".split(b"\n") == [b"a \rb"]  # CR forges no row
+    assert list(_log_rows(b"deadbee real \r subject")) == \
+        [("deadbee", "real \r subject")]
+    assert list(_log_rows("deadbee a\u2028b".encode())) == \
+        [("deadbee", "a\u2028b")]
+    assert sh("printf", "a\rb") == b"a\rb"  # bytes end to end
+    conds, names = _parse_job_meta_lines([
+        "jobs:\n",
+        "  a:\n",
+        "    if: github.ref == 'refs/heads/main'\n",
+        "\n",
+        "# a column-0 comment between jobs\n",
+        "  b:\n",
+        "    name: Build (issue #14)\n",
+        "    if: always()\n",
+    ])
+    assert conds == {"a": "github.ref == 'refs/heads/main'",
+                     "b": "always()"}
+    assert names == {"b": "Build (issue"}
 
 
 
@@ -371,12 +408,10 @@ def main():
         try:
             log = sh("git", "log", "--format=%h %s", log_rng).strip()
             out.append("Commits:")
-            # Split raw bytes on b"\n" only: universal-newlines
-            # decoding, splitlines(), or CR/U+2028/U+2029 in a subject
-            # must not smuggle a forged extra row.
-            for raw in log.split(b"\n") or [b"(none)"]:
-                line = raw.decode("utf-8", "replace")
-                short, _, subject = line.partition(" ")
+            # _log_rows splits raw bytes on b"\n" only: neither
+            # universal-newlines decoding nor CR/U+2028/U+2029 in a
+            # subject can smuggle a forged extra row.
+            for short, subject in _log_rows(log):
                 out.append(f"- `{md_escape(short)}` {md_escape(subject)}")
             # -z: NUL-delimited, no quoting of non-ASCII paths.
             diff = sh("git", "diff", "--name-status", "-z", diff_rng)
