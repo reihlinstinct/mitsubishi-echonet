@@ -39,6 +39,7 @@ dev = [
 packages = ["src/mitsubishi_echonet"]
 
 [tool.ruff]
+extend-exclude = ["scripts/security/scorecard_guard.py", "tests/security/test_scorecard_guard.py"]
 target-version = "py310"
 line-length = 100
 
