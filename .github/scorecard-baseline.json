@@ -1,0 +1,37 @@
+{
+ "version": 1,
+ "findings": [
+  {
+   "path": ".github/workflows/scorecard.yml",
+   "rule": "job-write",
+   "scope": "analysis",
+   "evidence": "security-events: write",
+   "issue": "https://github.com/reihlinstinct/mitsubishi-echonet/issues/41",
+   "reason": "Approved job-scoped SARIF upload to GitHub code scanning; no code or secrets write."
+  },
+  {
+   "path": ".github/workflows/ci.yml",
+   "rule": "unhashed-pip-install",
+   "scope": "dependencies",
+   "evidence": "pip install ruff mypy",
+   "issue": "https://github.com/reihlinstinct/mitsubishi-echonet/issues/41",
+   "reason": "Pre-existing pip install without --require-hashes; resolves unhashed dependencies; tracked for hash pinning in this issue."
+  },
+  {
+   "path": ".github/workflows/ci.yml",
+   "rule": "unhashed-pip-install",
+   "scope": "dependencies",
+   "evidence": "pip install -e . pytest pytest-cov",
+   "issue": "https://github.com/reihlinstinct/mitsubishi-echonet/issues/41",
+   "reason": "Pre-existing pip install without --require-hashes; resolves unhashed dependencies; tracked for hash pinning in this issue."
+  },
+  {
+   "path": ".github/workflows/wiki-sync.yml",
+   "rule": "job-write",
+   "scope": "sync",
+   "evidence": "contents: write",
+   "issue": "https://github.com/reihlinstinct/mitsubishi-echonet/issues/41",
+   "reason": "Wiki sync job pushes docs/wiki/ to the repo wiki (documented in-file); job-scoped; reviewed."
+  }
+ ]
+}
