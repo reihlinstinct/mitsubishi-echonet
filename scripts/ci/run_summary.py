@@ -346,6 +346,9 @@ def _self_test():
     ]})
     assert [p for _rx, p, _c in entries] == ["src/**", "docs/**"]
     assert entries[1][2] == []
+    assert _map_entries({"mappings": [
+        {"pattern": "x/**", "checks": ["ok", None, 3, "", "fine"]},
+    ]})[0][2] == ["ok", "fine"]
     assert _parse_needs("{") == {}
     assert _parse_needs("[]") == {}
     assert _parse_needs('{"a": {"result": "ok"}, "b": 3}') == \
@@ -422,6 +425,8 @@ def _map_entries(data):
             continue
         if not isinstance(checks, list):
             checks = []
+        else:
+            checks = [c for c in checks if isinstance(c, str) and c]
         try:
             rx = glob_to_regex(pattern)
         except re.error:
