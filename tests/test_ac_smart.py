@@ -289,9 +289,11 @@ class TestTransportHardening:
 class TestEchonetTest:
     def _responder(self) -> threading.Thread:
         def serve() -> None:
+            # The simulated adapter lives on 127.0.0.2 so its bind does not
+            # collide with the tool's own adapter-facing 127.0.0.1:3610 bind.
             r = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
             r.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-            r.bind(("127.0.0.1", 3610))
+            r.bind(("127.0.0.2", 3610))
             r.settimeout(5)
             try:
                 r.recvfrom(4096)
@@ -311,17 +313,20 @@ class TestEchonetTest:
 
         self._responder()
         time.sleep(0.1)
-        rc = ac_smart.main(["--ip", "127.0.0.1", "--timeout", "2", "echonet-test"])
+        rc = ac_smart.main(["--ip", "127.0.0.2", "--timeout", "2", "echonet-test"])
         assert rc == 0
         out = capsys.readouterr().out
         assert "ECHONET Lite is ENABLED" in out
         assert "power ON" in out
 
+    def test_local_addr_for_loopback(self) -> None:
+        assert ac_smart._local_addr_for("127.0.0.1") == "127.0.0.1"
+
     def test_no_reply(self, capsys: pytest.CaptureFixture[str]) -> None:
         # Drain any stale datagram left on 3610 by the previous test's responder.
         drain = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         drain.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        drain.bind(("", 3610))
+        drain.bind(("127.0.0.1", 3610))  # loopback only: no wildcard binds (CodeQL)
         drain.settimeout(0.05)
         try:
             while True:

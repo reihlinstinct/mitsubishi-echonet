@@ -674,6 +674,16 @@ _GET_AC_POWER = bytes.fromhex("1081000105ff0101300162018000")
 _GET_NODE_LIST = bytes.fromhex("1081000205ff010ef0016201d600")
 
 
+def _local_addr_for(ip: str) -> str:
+    """Local interface address used to reach the adapter (UDP connect sends nothing)."""
+    probe = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    try:
+        probe.connect((ip, _ECHONET_PORT))
+        return str(probe.getsockname()[0])
+    finally:
+        probe.close()
+
+
 def _echonet_listen(sock: socket.socket, deadline: float, out: list[str]) -> None:
     import time as _time
 
@@ -707,10 +717,20 @@ def cmd_echonet_test(ip: str, timeout: float) -> int:
     import time as _time
 
     out: list[str] = []
+    try:
+        local_addr = _local_addr_for(ip)
+    except OSError as exc:
+        print(f"No route to {ip} from this machine ({exc}).", file=sys.stderr)
+        print("Check the IP and that this machine is on the same network.", file=sys.stderr)
+        return 1
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     try:
         sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        sock.bind(("", _ECHONET_PORT))
+        # Bind the adapter-facing interface only, never INADDR_ANY: unicast
+        # replies arrive at our own address:3610, so a wildcard bind is both
+        # unnecessary and flagged by CodeQL. Multicast replies are unicast
+        # back to the sender, so this keeps discovery working.
+        sock.bind((local_addr, _ECHONET_PORT))
     except OSError as exc:
         sock.close()
         print(f"Cannot bind UDP 3610: {exc}", file=sys.stderr)
@@ -729,7 +749,7 @@ def cmd_echonet_test(ip: str, timeout: float) -> int:
             sock.setsockopt(
                 socket.IPPROTO_IP,
                 socket.IP_ADD_MEMBERSHIP,
-                socket.inet_aton(_MULTICAST_GROUP) + socket.inet_aton("0.0.0.0"),
+                socket.inet_aton(_MULTICAST_GROUP) + socket.inet_aton(local_addr),
             )
         try:
             sock.sendto(_GET_NODE_LIST, (_MULTICAST_GROUP, _ECHONET_PORT))
