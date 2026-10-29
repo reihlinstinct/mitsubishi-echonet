@@ -46,7 +46,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 def _run_toggle(fn: object, ip: str, timeout: float, verb: str) -> int:
     assert callable(fn)
-    result = fn(ip, timeout=max(timeout, 10.0))
+    result = fn(ip, timeout=timeout)
     if result.ok:
         print(f"ECHONET Lite {verb}: adapter at {ip} accepted the command (HTTP {result.status}).")
         print("Verify with: mitsubishi-echonet status --ip " + ip)
