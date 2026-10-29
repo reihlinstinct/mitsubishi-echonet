@@ -163,11 +163,15 @@ def duration_for(job_id, durations, display_names):
 
 def md_escape(text):
     """Render untrusted text (commit subjects, file paths, if-conditions)
-    as literal Markdown: control characters and newlines become spaces,
-    and the metacharacters that could break out of a table cell, code
-    span or link are backslash-escaped."""
+    as literal text in the step summary: control characters and newlines
+    become spaces, HTML metacharacters become entities (the summary
+    renders raw HTML), and the Markdown metacharacters that could break
+    out of a table cell, code span or link are backslash-escaped."""
     text = "".join(ch if (ch >= " " and ch != "\x7f") else " "
                    for ch in text)
+    text = (text.replace("&", "&amp;")
+            .replace("<", "&lt;")
+            .replace(">", "&gt;"))
     return (text.replace("\\", "\\\\")
             .replace("`", "\\`")
             .replace("|", "\\|")
@@ -179,6 +183,8 @@ def _self_test():
     """Regression checks for the summary tooling itself. Runs on every
     invocation; a failure means the tool is defective, so the job stops."""
     assert md_escape("a`b|c\nd[e]f\\g") == "a\\`b\\|c d\\[e\\]f\\\\g"
+    assert md_escape("<b>&") == "&lt;b&gt;&amp;"
+    assert md_escape("<a href='x'>y</a>") == "&lt;a href='x'&gt;y&lt;/a&gt;" 
     assert md_escape("\x00\x1f\r\n") == "    "
     assert md_escape("plain text") == "plain text"
     dur = {"test (3.11)": 60.0, "test (3.12)": 70.0, "lint": 30.0,
@@ -204,17 +210,26 @@ def load_event(env):
     return {}
 
 
-def changed_range(env, event):
+def changed_ranges(env, event):
+    """(log range, diff range) for this run, or None.
+
+    On pull_request, GITHUB_SHA is the synthetic merge commit, so it
+    would add a "Merge ..." entry to the commit list: list commits
+    base..head and diff files base...head (merge base) instead. On push,
+    before..after serves both."""
     name = env.get("GITHUB_EVENT_NAME", "")
     sha = env.get("GITHUB_SHA", "")
     if name == "pull_request":
-        base = (event.get("pull_request") or {}).get("base", {}).get("sha", "")
-        if base and sha:
-            return f"{base}...{sha}"
+        pr = event.get("pull_request") or {}
+        base = pr.get("base", {}).get("sha", "")
+        head = pr.get("head", {}).get("sha", "")
+        if base and head:
+            return f"{base}..{head}", f"{base}...{head}"
+        return None
     if name == "push":
         before = event.get("before", "")
         if before and set(before) != {"0"} and sha:
-            return f"{before}..{sha}"
+            return f"{before}..{sha}", f"{before}..{sha}"
     return None
 
 
@@ -305,18 +320,19 @@ def main():
 
     # --- What changed -----------------------------------------------------
     event = load_event(env)
-    rng = changed_range(env, event)
+    ranges = changed_ranges(env, event)
     files = []
-    if rng:
-        out.append(f"\n### What changed in this run (`{rng}`)\n")
+    if ranges:
+        log_rng, diff_rng = ranges
+        out.append(f"\n### What changed in this run (`{diff_rng}`)\n")
         try:
-            log = sh("git", "log", "--format=%h %s", rng).strip()
+            log = sh("git", "log", "--format=%h %s", log_rng).strip()
             out.append("Commits:")
             for line in log.splitlines() or ["(none)"]:
                 short, _, subject = line.partition(" ")
                 out.append(f"- `{short}` {md_escape(subject)}")
             # -z: NUL-delimited, no quoting of non-ASCII paths.
-            diff = sh("git", "diff", "--name-status", "-z", rng)
+            diff = sh("git", "diff", "--name-status", "-z", diff_rng)
             records = [r for r in diff.split("\x00") if r]
             i = 0
             while i < len(records):
