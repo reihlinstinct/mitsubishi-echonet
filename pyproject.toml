@@ -31,7 +31,7 @@ mitsubishi-echonet = "mitsubishi_echonet.cli:run"
 dev = [
     "pytest>=8",
     "pytest-cov>=5",
-    "ruff>=0.6",
+    "ruff>=0.17.2",
     "mypy>=1.10",
 ]
 
