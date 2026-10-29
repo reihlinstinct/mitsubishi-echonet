@@ -1,6 +1,8 @@
 # mitsubishi-echonet
 
 [![CI](https://github.com/reihlinstinct/mitsubishi-echonet/actions/workflows/ci.yml/badge.svg)](https://github.com/reihlinstinct/mitsubishi-echonet/actions/workflows/ci.yml)
+
+Every workflow ends with a `Run summary` job that writes a summary to the top of the run page: which jobs ran, their result and duration, what was skipped and why, the commits and files the run changed, and which checks cover those changes (`.github/ci-coverage-map.json` declares the coverage; files matching no mapping are flagged). The script is `scripts/ci/run_summary.py`.
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 Enable, disable and verify **local ECHONET Lite control** on Mitsubishi Electric
