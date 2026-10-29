@@ -248,11 +248,13 @@ def read_property_maps(
     ):
         maps[epc] = None
         result = query(ip, tid=offset + 1, deoj=deoj, epc=epc, timeout=timeout)
-        if result is None:
+        if result is None or result.frame.esv == ESV_GET_SNA:
             continue
         for prop in result.frame.properties:
             if prop.epc == epc:
-                maps[epc] = parse_property_map(prop.edt)
+                parsed = parse_property_map(prop.edt)
+                if parsed:
+                    maps[epc] = parsed
     return maps
 
 
@@ -293,8 +295,10 @@ def query(
     timeout: float = 3.0,
     sock: socket.socket | None = None,
 ) -> ProbeResult | None:
-    """Send one GET to a specific adapter; return its first reply, if any.
+    """Send one GET to a specific adapter; return its matching reply, if any.
 
+    Only a Get_Res/Get_SNA with our TID carrying the requested EPC counts -
+    stray broadcasts and other clients' traffic on UDP 3610 are ignored.
     A reply means the adapter has ECHONET Lite enabled. Silence means it is
     disabled, unreachable, or filtered - pair with a TCP reachability check to
     tell those apart.
@@ -305,7 +309,15 @@ def query(
     try:
         sock.sendto(build_get_request(tid, deoj, epc), (ip, ECHONET_PORT))
         results = _collect(sock, time.monotonic() + timeout)
-        return results[0] if results else None
+        for result in results:
+            frame = result.frame
+            if frame.tid != tid:
+                continue
+            if frame.esv not in (ESV_GET_RES, ESV_GET_SNA):
+                continue
+            if any(prop.epc == epc for prop in frame.properties):
+                return result
+        return None
     finally:
         if own_sock:
             sock.close()

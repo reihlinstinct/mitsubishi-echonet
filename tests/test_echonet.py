@@ -13,6 +13,8 @@ from mitsubishi_echonet.echonet import (
     EPC_OPERATION_STATUS,
     ESV_GET,
     ESV_GET_RES,
+    ESV_GET_SNA,
+    ESV_INF,
     EchonetFrame,
     EchonetProperty,
     FrameError,
@@ -175,6 +177,51 @@ class TestQuery:
         assert result.address == "192.0.2.10"
 
 
+class TestQueryMatching:
+    def _frame(self, tid: int, esv: int, epc: int) -> bytes:
+        return EchonetFrame(
+            tid=tid,
+            seoj=EOJ_HOME_AIR_CONDITIONER,
+            deoj=EOJ_CONTROLLER,
+            esv=esv,
+            properties=(EchonetProperty(epc, b"\x30"),),
+        ).to_bytes()
+
+    def test_wrong_tid_is_ignored(self) -> None:
+        sock = FakeSocket(
+            [
+                (self._frame(2, ESV_GET_RES, EPC_OPERATION_STATUS), ("192.0.2.10", 3610)),
+                (self._frame(1, ESV_GET_RES, EPC_OPERATION_STATUS), ("192.0.2.10", 3610)),
+            ]
+        )
+        result = echonet.query("192.0.2.10", timeout=0.1, sock=sock)  # type: ignore[arg-type]
+        assert result is not None
+        assert result.frame.tid == 1
+
+    def test_wrong_epc_is_ignored(self) -> None:
+        sock = FakeSocket(
+            [
+                (self._frame(1, ESV_GET_RES, 0xB3), ("192.0.2.10", 3610)),
+                (self._frame(1, ESV_GET_RES, EPC_OPERATION_STATUS), ("192.0.2.10", 3610)),
+            ]
+        )
+        result = echonet.query("192.0.2.10", timeout=0.1, sock=sock)  # type: ignore[arg-type]
+        assert result is not None
+        assert result.frame.properties[0].epc == EPC_OPERATION_STATUS
+
+    def test_inf_broadcast_is_ignored(self) -> None:
+        sock = FakeSocket([(self._frame(1, ESV_INF, EPC_OPERATION_STATUS), ("192.0.2.10", 3610))])
+        assert echonet.query("192.0.2.10", timeout=0.05, sock=sock) is None  # type: ignore[arg-type]
+
+    def test_get_sna_counts_as_reply(self) -> None:
+        sock = FakeSocket(
+            [(self._frame(1, ESV_GET_SNA, EPC_OPERATION_STATUS), ("192.0.2.10", 3610))]
+        )
+        result = echonet.query("192.0.2.10", timeout=0.1, sock=sock)  # type: ignore[arg-type]
+        assert result is not None
+        assert result.frame.esv == ESV_GET_SNA
+
+
 class TestDiscover:
     def test_collects_multiple_responders(self) -> None:
         sock = FakeSocket(
@@ -267,6 +314,29 @@ class TestReadPropertyMaps:
 
     def test_no_reply_is_none(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setattr(echonet, "query", lambda *a, **kw: None)
+        maps = echonet.read_property_maps("192.0.2.10")
+        assert all(value is None for value in maps.values())
+
+    def test_sna_reply_stays_none(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        def fake_query(ip: str, **kw):
+            frame = EchonetFrame(
+                tid=1,
+                seoj=EOJ_HOME_AIR_CONDITIONER,
+                deoj=EOJ_CONTROLLER,
+                esv=ESV_GET_SNA,
+                properties=(echonet.EchonetProperty(kw["epc"]),),
+            )
+            return ProbeResult(address="192.0.2.10", port=3610, frame=frame)
+
+        monkeypatch.setattr(echonet, "query", fake_query)
+        maps = echonet.read_property_maps("192.0.2.10")
+        assert all(value is None for value in maps.values())
+
+    def test_empty_map_edt_stays_none(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        def fake_query(ip: str, **kw):
+            return self._map_reply(kw["epc"], b"")
+
+        monkeypatch.setattr(echonet, "query", fake_query)
         maps = echonet.read_property_maps("192.0.2.10")
         assert all(value is None for value in maps.values())
 
