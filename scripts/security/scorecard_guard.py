@@ -128,7 +128,7 @@ def scan(root: Path) -> list[Finding]:
         if p.is_symlink():continue
         text=re.sub(r'\\\s*\n\s*',' ',p.read_text(encoding='utf-8'))
         reqs=[]
-        for im in re.finditer(r'\bpip(?:3)?\s+install[^\n;&|]*', text):
+        for im in re.finditer(r'\b(?:pip(?:3)?|python(?:3(?:\.\d+)?)?\s+-m\s+pip)(?:\s+--[\w-]+(?:=[^\s]+)?)*\s+install[^\n;&|]*', text):
             reqs.extend(rm.group(1) for rm in re.finditer(r'(?:^|\s)(?:-r\s*|--requirement(?:=|\s+))([\w./-]+)', im.group(0)))
         for req in reqs:
             target=root/req
