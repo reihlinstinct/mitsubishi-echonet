@@ -25,7 +25,11 @@ MAP_PATH = ".github/ci-coverage-map.json"
 
 
 def sh(*args):
-    return subprocess.run(list(args), capture_output=True, text=True,
+    """Raw bytes. Decoding and splitting happen at the call site, so an
+    embedded carriage return or invalid UTF-8 in a commit subject or
+    filename cannot forge an extra record (text=True would translate
+    CR to a line break)."""
+    return subprocess.run(list(args), capture_output=True,
                           check=True).stdout
 
 
@@ -108,6 +112,16 @@ def _yaml_plain_scalar(text):
     return text.split(" #", 1)[0].rstrip()
 
 
+def _job_display_name(raw):
+    """Static job display name from a raw `name:` value, or None.
+
+    Plain-scalar comments are stripped first: a comment containing an
+    expression (name: X # ${{ ... }}) does not make the static name
+    dynamic; a real expression in the value rejects the name."""
+    name = _yaml_plain_scalar(raw)
+    return None if "${{" in name else name
+
+
 def load_job_meta(env):
     """(job id -> `if:` expression, job id -> static display name), parsed
     from the workflow file. Job-level keys sit at 4-space indent; `name:`
@@ -140,8 +154,10 @@ def load_job_meta(env):
                         conditions[current] = m.group(1)
                         continue
                     m = re.match(r"^    name:\s*(.+?)\s*$", line)
-                    if m and current and "${{" not in m.group(1):
-                        names[current] = _yaml_plain_scalar(m.group(1))
+                    if m and current:
+                        name = _job_display_name(m.group(1))
+                        if name:
+                            names[current] = name
     except OSError:
         return {}, {}
     return conditions, names
@@ -219,6 +235,10 @@ def _self_test():
     assert _yaml_plain_scalar("Language shootout (issue #14)") == \
         "Language shootout (issue"
     assert _yaml_plain_scalar('"a # b"') == '"a # b"'
+    assert _job_display_name("Build things # ${{ matrix.x }}") == \
+        "Build things"
+    assert _job_display_name("Test (${{ matrix.py }})") is None
+    assert b"a \rb".split(b"\n") == [b"a \rb"]  # CR forges no row
 
 
 
@@ -351,14 +371,17 @@ def main():
         try:
             log = sh("git", "log", "--format=%h %s", log_rng).strip()
             out.append("Commits:")
-            # split("\n"), not splitlines(): a subject containing
-            # U+2028/U+2029 must not smuggle a forged extra row.
-            for line in log.split("\n") or ["(none)"]:
+            # Split raw bytes on b"\n" only: universal-newlines
+            # decoding, splitlines(), or CR/U+2028/U+2029 in a subject
+            # must not smuggle a forged extra row.
+            for raw in log.split(b"\n") or [b"(none)"]:
+                line = raw.decode("utf-8", "replace")
                 short, _, subject = line.partition(" ")
-                out.append(f"- `{short}` {md_escape(subject)}")
+                out.append(f"- `{md_escape(short)}` {md_escape(subject)}")
             # -z: NUL-delimited, no quoting of non-ASCII paths.
             diff = sh("git", "diff", "--name-status", "-z", diff_rng)
-            records = [r for r in diff.split("\x00") if r]
+            records = [r.decode("utf-8", "replace")
+                       for r in diff.split(b"\x00") if r]
             i = 0
             while i < len(records):
                 status = records[i]
