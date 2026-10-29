@@ -104,29 +104,6 @@ jobs:
             exit 1
           fi
 
-  weekly-failure-issue:
-    name: Weekly failure issue
-    # Opens (or updates a single open) issue when the scheduled weekly full
-    # suite fails. Test jobs run with the read-only token; only this job gets
-    # issues: write.
-    if: ${{ github.event_name == 'schedule' && failure() }}
-    needs: [lint, test, container]
-    runs-on: ubuntu-24.04
-    permissions:
-      issues: write
-    steps:
-      - name: Open or update one failure issue
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          existing=$(gh issue list --state open --search 'Weekly CI failure in:title' --json number --jq '.[0].number // ""')
-          body="The scheduled weekly full test suite failed: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
-          if [ -n "$existing" ]; then
-            gh issue comment "$existing" --body "$body"
-          else
-            gh issue create --title "Weekly CI failure ($(date +%Y-%m-%d))" --body "$body"
-          fi
-
   summary:
     permissions:
       contents: read
