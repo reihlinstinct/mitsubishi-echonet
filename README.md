@@ -36,6 +36,18 @@ pipx install git+https://github.com/reihlinstinct/mitsubishi-echonet.git
 # or: pip install git+https://github.com/reihlinstinct/mitsubishi-echonet.git
 ```
 
+## Run in a container (no install on your machine)
+
+```bash
+docker build -t mitsubishi-echonet .
+docker run --rm --network host mitsubishi-echonet status --ip 192.168.1.50
+```
+
+`--network host` is required on Linux so the UDP 3610 probe (and multicast
+discovery) reaches the adapter. Works identically with `podman`. The image is
+Alpine-based, pinned by digest, runs as a non-root user, and installs no third
+party packages.
+
 ## Usage
 
 The machine must be on the same LAN as the adapter.
