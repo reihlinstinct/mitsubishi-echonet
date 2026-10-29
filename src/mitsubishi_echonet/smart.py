@@ -84,7 +84,8 @@ def post_smart(
     except urllib.error.URLError as exc:
         return SmartResult(False, None, "", f"cannot reach {smart_url(ip, port)}: {exc.reason}")
     except TimeoutError:
-        return SmartResult(False, None, "", f"timed out after {timeout}s")
+        url = smart_url(ip, port)
+        return SmartResult(False, None, "", f"timed out after {timeout}s reaching {url}")
 
     if status is not None and 200 <= status < 300 and "<ESV>" in body:
         return SmartResult(True, status, body, None)
