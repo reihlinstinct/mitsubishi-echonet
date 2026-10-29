@@ -136,9 +136,15 @@ def _parse_job_meta_lines(lines):
             in_jobs = True
             continue
         if in_jobs:
-            m = re.match(r"^  ([A-Za-z0-9_.-]+):\s*(?:#.*)?$", line)
+            m = re.match(
+                r"^  (?:'([^']*)'|\"([^\"]*)\"|([A-Za-z0-9_.-]+))"
+                r":\s*(?:#.*)?$",
+                line,
+            )
             if m:
-                current = m.group(1)
+                # YAML permits quoted keys; a quoted job id is the id
+                # without its quotes.
+                current = m.group(1) or m.group(2) or m.group(3)
                 continue
             stripped = line.strip()
             if stripped and not stripped.startswith("#") \
@@ -290,11 +296,16 @@ def _self_test():
         "    if: always()\n",
         "    name: Lint\n",
         "  'quoted-id':\n",
-        "    if: wrong()\n",
+        "    name: Quoted\n",
+        "    if: github.event_name == 'push'\n",
+        "  c: {}\n",
+        "    if: dropped()\n",
     ])
     assert conds == {"a": "github.ref == 'refs/heads/main'",
-                     "b": "always()"}  # trailing comment recognized
-    assert names == {"b": "Lint"}  # quoted id clears current, if dropped
+                     "b": "always()",  # trailing comment recognized
+                     "quoted-id": "github.event_name == 'push'"}
+    assert names == {"b": "Lint", "quoted-id": "Quoted"}
+    # "c: {}" matches no header form: current cleared, if: dropped
 
 
 
