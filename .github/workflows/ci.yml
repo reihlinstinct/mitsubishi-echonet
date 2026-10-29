@@ -48,6 +48,19 @@ jobs:
             echo "expected non-zero exit for an unreachable adapter" >&2
             exit 1
           fi
+          # The entrypoint dispatches the /smart subcommands to ac_smart.py:
+          # each --help exits 0 only if the script is in the image and routed.
+          docker run --rm mitsubishi-echonet:test smart-status --help
+          docker run --rm mitsubishi-echonet:test on --help
+          docker run --rm mitsubishi-echonet:test set --help
+          docker run --rm mitsubishi-echonet:test monitor --help
+          docker run --rm mitsubishi-echonet:test echonet-test --help
+          # set must fail non-zero against an unreachable adapter, proving the
+          # full path (dispatch, status fetch, validation) works in the image.
+          if docker run --rm --network host mitsubishi-echonet:test set --ip 192.0.2.1 --timeout 1 --mode cool; then
+            echo "expected non-zero exit for an unreachable adapter" >&2
+            exit 1
+          fi
 
   summary:
     permissions:

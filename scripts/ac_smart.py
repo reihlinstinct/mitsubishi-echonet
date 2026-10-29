@@ -5,11 +5,20 @@ Talks to the adapter's unauthenticated local /smart HTTP endpoint (the same
 channel the MELCloud Home app uses on the LAN). No cloud, no dependencies:
 Python 3.10+ standard library only.
 
-Usage:
-    python3 ac_smart.py --ip 192.168.88.30 status       # read-only: power, mode, temps
-    python3 ac_smart.py --ip 192.168.88.30 on           # power on (keeps last mode/temp)
-    python3 ac_smart.py --ip 192.168.88.30 off          # power off
-    python3 ac_smart.py --ip 192.168.88.30 echonet-test # is ECHONET Lite answering on UDP 3610?
+Usage (global options work before or after the subcommand):
+    python3 ac_smart.py --ip 192.168.88.30 status        # read-only: power, mode, temps, energy
+    python3 ac_smart.py --ip 192.168.88.30 on            # power on (keeps last mode/temp)
+    python3 ac_smart.py --ip 192.168.88.30 off           # power off
+    python3 ac_smart.py --ip 192.168.88.30 set --mode cool --temp 24 --fan auto
+    python3 ac_smart.py --ip 192.168.88.30 set --vane-v swing --vane-h center
+    python3 ac_smart.py --ip 192.168.88.30 set --dehum 50 --power-saving on
+    python3 ac_smart.py --ip 192.168.88.30 monitor --out energy.csv --interval 30
+    python3 ac_smart.py --ip 192.168.88.30 echonet-test  # is ECHONET Lite answering on UDP 3610?
+
+set reads the current state first and changes only what you pass, like
+pymitsubishi's changeset flow; its frames are byte-identical to pymitsubishi's.
+monitor polls power/energy and appends CSV or JSON lines (interval >= 10 s:
+the adapter is a small device, be gentle).
 
 Protocol (community-reverse-engineered, pymitsubishi/mac-577if-e):
 request body <?xml ...?><ESV>base64(iv + AES-128-CBC(key, iso7816-padded XML))</ESV>
@@ -23,9 +32,11 @@ from __future__ import annotations
 import argparse
 import base64
 import contextlib
+import json
 import os
 import socket
 import sys
+import time
 import urllib.request
 import xml.etree.ElementTree as ET
 
@@ -315,10 +326,13 @@ def _general_lines(data: bytes) -> list[str]:
     return ["AC: " + ", ".join(parts)]
 
 
-def _sensor_lines(data: bytes) -> list[str]:
+def _room_temp(data: bytes) -> float:
     room = _half_deg(data[11])
-    if room is None:
-        room = float(10 + data[8])
+    return float(10 + data[8]) if room is None else room
+
+
+def _sensor_lines(data: bytes) -> list[str]:
+    room = _room_temp(data)
     parts = [f"room {room:g} C"]
     outside = _half_deg(data[10])
     if outside is not None:
@@ -334,11 +348,25 @@ def _error_lines(data: bytes) -> list[str]:
     return ["error: none" if code in (0x0000, 0x8000) else f"error: code {code:#06x}"]
 
 
+def _energy_fields(data: bytes) -> tuple[bool, int, float]:
+    """(compressor running, instantaneous watts, cumulative kWh)."""
+    return (
+        bool(data[9]),
+        int.from_bytes(data[10:12], "big"),
+        int.from_bytes(data[12:14], "big") / 10,
+    )
+
+
 def _energy_lines(data: bytes) -> list[str]:
-    watts = int.from_bytes(data[10:12], "big")
-    kwh = int.from_bytes(data[12:14], "big") / 10
-    operating = "running" if data[9] else "idle"
-    return [f"energy: {operating}, now {watts} W, lifetime {kwh:g} kWh"]
+    operating, watts, kwh = _energy_fields(data)
+    if not operating and watts == 0 and kwh == 0:
+        return [
+            "energy: idle, now 0 W, cumulative 0 kWh (all energy fields read zero;"
+            " some units update them only while the compressor runs, and some"
+            " adapters never report cumulative energy at all)"
+        ]
+    state = "running" if operating else "idle"
+    return [f"energy: {state}, now {watts} W, lifetime {kwh:g} kWh"]
 
 
 def _auto_lines(data: bytes) -> list[str]:
@@ -389,6 +417,243 @@ def cmd_power(ip: str, on: bool, timeout: float) -> int:
     print(summarize(reply))
     print(f"Power {'ON' if on else 'OFF'} command sent. The AC takes a few seconds to react;")
     print("re-run 'status' to confirm.")
+    return 0
+
+
+# --------------------------------------------------------------------------
+# Control surface (byte-identical to pymitsubishi's command generators)
+
+def _parse_codes(lsv_xml: str) -> dict[int, bytes]:
+    """Map CODE type byte -> payload bytes from an LSV/CSV status reply."""
+    codes: dict[int, bytes] = {}
+    try:
+        root = ET.fromstring(lsv_xml)
+    except ET.ParseError:
+        return codes
+    for value in root.findall(".//CODE/VALUE"):
+        try:
+            data = bytes.fromhex(value.text or "")
+        except ValueError:
+            continue
+        if len(data) >= 6 and data[0] == 0xFC:
+            codes[data[5]] = data
+    return codes
+
+
+def parse_general(data: bytes) -> dict[str, object]:
+    """Structured general-states parse; keys mirror pymitsubishi's GeneralStates."""
+    return {
+        "power": data[8],
+        "mode": data[9] & 0x07,  # 0 = auto as reported; commands send 8 for auto
+        "temp": (data[16] - 0x80) / 2 if data[16] else 31 - data[10],
+        "fine": bool(data[16]),
+        "fan": data[11],
+        "vane_v": data[12],
+        "remote_lock": data[13],
+        "vane_h": data[15] & 0x0F,
+        "dehum": data[17],
+        "power_saving": data[18] > 0,
+        "wind_break": data[19],
+    }
+
+
+# Controls bit values (general command), from pymitsubishi's Controls IntFlag.
+_CTRL_POWER = 0x0100
+_CTRL_MODE = 0x0200
+_CTRL_TEMP = 0x0400
+_CTRL_FAN = 0x0800
+_CTRL_VANE_V = 0x1000
+_CTRL_LOCK = 0x4000
+_CTRL_VANE_H = 0x0001
+_CTRL_OUTSIDE = 0x0002  # always set by pymitsubishi
+# Controls08 bit values (extend08 command).
+_CTRL08_DEHUM = 0x04
+_CTRL08_PSAVE = 0x08
+_CTRL08_BUZZER = 0x10
+
+
+def general_command_frame(state: dict[str, object], controls: int) -> bytes:
+    """General set-frame, byte-identical to pymitsubishi generate_general_command."""
+    cmd = bytearray(b"\x41\x01\x30\x10\x01") + b"\0" * 15
+    cmd[5:7] = (controls | _CTRL_OUTSIDE).to_bytes(2, "big")
+    cmd[7] = int(state["power"])
+    cmd[8] = int(state["mode"])
+    cmd[9] = 31 - int(float(state["temp"]))
+    cmd[10] = int(state["fan"])
+    cmd[11] = int(state["vane_v"])
+    cmd[15] = int(state["remote_lock"])
+    cmd[17] = int(state["vane_h"])
+    cmd[18] = 0x80 + int(float(state["temp"]) * 2) if state["fine"] else 0x00
+    cmd[19] = 0x41
+    return b"\xfc" + cmd + bytes([calc_fcc(cmd)])
+
+
+def extend08_command_frame(state: dict[str, object], controls08: int) -> bytes:
+    """Extend08 set-frame, byte-identical to pymitsubishi generate_extend08_command."""
+    cmd = bytearray(b"\x41\x01\x30\x10\x08") + b"\0" * 15
+    cmd[5] = controls08
+    cmd[8] = int(state["dehum"]) if controls08 & _CTRL08_DEHUM else 0
+    cmd[9] = 0x0A if state["power_saving"] else 0x00
+    cmd[10] = int(state["wind_break"]) if controls08 & 0x20 else 0
+    cmd[11] = 0x01 if controls08 & _CTRL08_BUZZER else 0
+    return b"\xfc" + cmd + bytes([calc_fcc(cmd)])
+
+
+_MODE_TO_BYTE = {"auto": 8, "heat": 1, "dry": 2, "cool": 3, "fan": 7}
+_FAN_TO_BYTE = {"auto": 0, "s1": 1, "s2": 2, "s3": 3, "s4": 5, "full": 6}
+_VANE_V_TO_BYTE = {"auto": 0, "v1": 1, "v2": 2, "v3": 3, "v4": 4, "v5": 5, "swing": 7}
+_VANE_H_TO_BYTE = {
+    "auto": 0,
+    "far-left": 1,
+    "left": 2,
+    "center": 3,
+    "right": 4,
+    "far-right": 5,
+    "left-center": 6,
+    "center-right": 7,
+    "left-right": 8,
+    "left-center-right": 9,
+    "swing": 12,
+}
+_LOCK_BITS = {"power": 1, "mode": 2, "temp": 4}
+
+
+def _parse_remote_lock(text: str) -> int:
+    if text in ("unlock", "none", "off"):
+        return 0
+    try:
+        bits = [_LOCK_BITS[part.strip()] for part in text.split(",")]
+    except KeyError as exc:
+        raise ValueError(
+            f"bad --remote-lock value {exc}; use unlock or a comma list of power,mode,temp"
+        ) from None
+    value = 0
+    for bit in bits:
+        value |= bit
+    return value
+
+
+def _send_frame(ip: str, frame: bytes, timeout: float) -> str:
+    return post_smart(ip, f"<CSV><CODE><VALUE>{frame.hex()}</VALUE></CODE></CSV>", timeout)
+
+
+def cmd_set(args: argparse.Namespace) -> int:
+    lsv = post_smart(args.ip, "<CSV></CSV>", args.timeout)
+    data = _parse_codes(lsv).get(0x02)
+    if data is None or len(data) < 21:
+        raise RuntimeError("status reply carried no general-states payload; cannot set safely")
+    state = parse_general(data)
+    controls = 0
+    controls08 = 0
+    if args.mode is not None:
+        state["mode"] = _MODE_TO_BYTE[args.mode]
+        controls |= _CTRL_MODE
+    if args.temp is not None:
+        temp = args.temp
+        if not 16.0 <= temp <= 31.0 or (temp * 2) != int(temp * 2):
+            raise ValueError("--temp must be 16.0-31.0 in 0.5 C steps")
+        state["temp"] = temp
+        state["fine"] = True
+        controls |= _CTRL_TEMP
+    if args.fan is not None:
+        state["fan"] = _FAN_TO_BYTE[args.fan]
+        controls |= _CTRL_FAN
+    if args.vane_v is not None:
+        state["vane_v"] = _VANE_V_TO_BYTE[args.vane_v]
+        controls |= _CTRL_VANE_V
+    if args.vane_h is not None:
+        state["vane_h"] = _VANE_H_TO_BYTE[args.vane_h]
+        controls |= _CTRL_VANE_H
+    if args.remote_lock is not None:
+        state["remote_lock"] = _parse_remote_lock(args.remote_lock)
+        controls |= _CTRL_LOCK
+    if args.dehum is not None:
+        if not 0 <= args.dehum <= 255:
+            raise ValueError("--dehum must be 0-255 (the raw level 'status' reports)")
+        state["dehum"] = args.dehum
+        controls08 |= _CTRL08_DEHUM
+    if args.power_saving is not None:
+        state["power_saving"] = args.power_saving == "on"
+        controls08 |= _CTRL08_PSAVE
+    if args.buzzer:
+        controls08 |= _CTRL08_BUZZER
+    if not controls and not controls08:
+        raise ValueError("nothing to set: pass at least one option (see set --help)")
+    reply = ""
+    if controls:
+        reply = _send_frame(args.ip, general_command_frame(state, controls), args.timeout)
+    if controls08:
+        reply = _send_frame(args.ip, extend08_command_frame(state, controls08), args.timeout)
+    print(summarize(reply))
+    print("Command sent. The AC takes a few seconds to react; re-run 'status' to confirm.")
+    return 0
+
+
+_MONITOR_COLUMNS = (
+    "timestamp",
+    "operating",
+    "power_w",
+    "energy_kwh",
+    "ac_power",
+    "mode",
+    "set_temp_c",
+    "room_temp_c",
+)
+
+
+def _monitor_sample(lsv_xml: str) -> dict[str, object]:
+    codes = _parse_codes(lsv_xml)
+    row: dict[str, object] = {"timestamp": time.strftime("%Y-%m-%dT%H:%M:%S%z")}
+    energy = codes.get(0x06)
+    if energy is not None and len(energy) >= 14:
+        operating, watts, kwh = _energy_fields(energy)
+        row.update(operating=int(operating), power_w=watts, energy_kwh=f"{kwh:g}")
+    general = codes.get(0x02)
+    if general is not None and len(general) >= 21:
+        state = parse_general(general)
+        row.update(
+            ac_power="on" if state["power"] else "off",
+            mode=_MODES.get(int(state["mode"]), state["mode"]),
+            set_temp_c=f"{float(state['temp']):g}",
+        )
+    sensor = codes.get(0x03)
+    if sensor is not None and len(sensor) >= 21:
+        row["room_temp_c"] = f"{_room_temp(sensor):g}"
+    return row
+
+
+def cmd_monitor(args: argparse.Namespace, sleep: object = None) -> int:
+    if args.interval < 10:
+        raise ValueError("--interval below 10 s is too aggressive for the adapter")
+    if sleep is None:
+        sleep = time.sleep
+    fmt = args.format
+    if fmt is None:
+        fmt = "json" if args.out.endswith((".json", ".jsonl")) else "csv"
+    write_header = fmt == "csv" and (not os.path.exists(args.out) or os.path.getsize(args.out) == 0)
+    samples = 0
+    with open(args.out, "a", encoding="utf-8") as fh:
+        if write_header:
+            fh.write(",".join(_MONITOR_COLUMNS) + "\n")
+        try:
+            while True:
+                try:
+                    row = _monitor_sample(post_smart(args.ip, "<CSV></CSV>", args.timeout))
+                except (OSError, RuntimeError, ET.ParseError) as exc:
+                    print(f"poll failed: {exc}", file=sys.stderr)
+                else:
+                    if fmt == "json":
+                        fh.write(json.dumps(row, separators=(",", ":")) + "\n")
+                    else:
+                        fh.write(",".join(str(row.get(col, "")) for col in _MONITOR_COLUMNS) + "\n")
+                    fh.flush()
+                    print(" ".join(f"{k}={v}" for k, v in row.items()))
+                    samples += 1
+                    if args.count and samples >= args.count:
+                        return 0
+                sleep(args.interval)
+        except KeyboardInterrupt:
+            print(f"stopped after {samples} samples", file=sys.stderr)
     return 0
 
 
@@ -479,17 +744,63 @@ def cmd_echonet_test(ip: str, timeout: float) -> int:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument("--ip", required=True, help="adapter IP on the local network")
+    parser.add_argument("--ip", help="adapter IP on the local network")
     parser.add_argument("--timeout", type=float, default=5.0, help="seconds (default 5)")
-    parser.add_argument("command", choices=["status", "on", "off", "echonet-test"])
+    sub = parser.add_subparsers(dest="command", required=True)
+
+    def common(p: argparse.ArgumentParser) -> None:
+        # Repeat the global options on every subcommand so they parse in any
+        # position. SUPPRESS defaults keep them from clobbering values the
+        # main parser already consumed.
+        p.add_argument("--ip", default=argparse.SUPPRESS, help=argparse.SUPPRESS)
+        p.add_argument("--timeout", type=float, default=argparse.SUPPRESS, help=argparse.SUPPRESS)
+
+    for name in ("status", "on", "off", "echonet-test"):
+        common(sub.add_parser(name))
+
+    p_set = sub.add_parser("set", help="change settings; everything not passed stays as-is")
+    common(p_set)
+    p_set.add_argument("--mode", choices=sorted(_MODE_TO_BYTE))
+    p_set.add_argument("--temp", type=float, help="setpoint 16.0-31.0 in 0.5 C steps")
+    p_set.add_argument("--fan", choices=sorted(_FAN_TO_BYTE))
+    p_set.add_argument("--vane-v", choices=sorted(_VANE_V_TO_BYTE), help="vertical vane")
+    p_set.add_argument("--vane-h", choices=sorted(_VANE_H_TO_BYTE), help="horizontal vane")
+    p_set.add_argument(
+        "--dehum", type=int, help="dehumidifier level 0-255, raw as 'status' reports"
+    )
+    p_set.add_argument("--power-saving", choices=["on", "off"])
+    p_set.add_argument(
+        "--remote-lock", metavar="unlock|power,mode,temp", help="remote-control lock"
+    )
+    p_set.add_argument("--buzzer", action="store_true", help="beep the indoor unit")
+
+    p_mon = sub.add_parser("monitor", help="poll power/energy and append CSV or JSON lines")
+    common(p_mon)
+    p_mon.add_argument(
+        "--out", required=True, help="log file (.json/.jsonl = JSON lines, else CSV)"
+    )
+    p_mon.add_argument(
+        "--interval", type=float, default=30.0, help="seconds between polls (min 10, default 30)"
+    )
+    p_mon.add_argument(
+        "--count", type=int, default=0, help="stop after N samples (default: run until Ctrl-C)"
+    )
+    p_mon.add_argument("--format", choices=["csv", "json"], help="default: from --out extension")
+
     args = parser.parse_args(argv)
+    if not args.ip:
+        parser.error("--ip is required")
     try:
         if args.command == "status":
             return cmd_status(args.ip, args.timeout)
         if args.command == "echonet-test":
             return cmd_echonet_test(args.ip, args.timeout)
+        if args.command == "set":
+            return cmd_set(args)
+        if args.command == "monitor":
+            return cmd_monitor(args)
         return cmd_power(args.ip, args.command == "on", args.timeout)
-    except (OSError, RuntimeError, ET.ParseError) as exc:
+    except (OSError, RuntimeError, ValueError, ET.ParseError) as exc:
         print(f"Failed: {exc}", file=sys.stderr)
         print(
             "Check the IP and that this machine is on the same network as the adapter.",

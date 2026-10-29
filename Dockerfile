@@ -10,6 +10,11 @@ COPY src ./src
 RUN pip install --no-cache-dir --no-deps . \
     && adduser -D -H appuser
 
+# /smart power control: standalone stdlib-only script plus a dispatcher that
+# routes its subcommands (smart-status/on/off/set/monitor/echonet-test).
+COPY scripts/ac_smart.py /app/ac_smart.py
+COPY docker/entrypoint.sh /app/docker-entrypoint.sh
+
 USER appuser
-ENTRYPOINT ["mitsubishi-echonet"]
+ENTRYPOINT ["/app/docker-entrypoint.sh"]
 CMD ["--help"]
