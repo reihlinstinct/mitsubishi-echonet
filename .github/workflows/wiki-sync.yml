@@ -65,6 +65,8 @@ jobs:
           echo "::notice::Wiki synced from docs/wiki/ at ${GITHUB_SHA::7}"
 
   summary:
+    permissions:
+      contents: read
     name: Run summary
     if: always()
     needs: [sync]

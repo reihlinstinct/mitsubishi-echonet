@@ -50,6 +50,8 @@ jobs:
           fi
 
   summary:
+    permissions:
+      contents: read
     name: Run summary
     if: always()
     needs: [lint, test, container]

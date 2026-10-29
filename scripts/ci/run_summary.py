@@ -161,6 +161,38 @@ def duration_for(job_id, durations, display_names):
     return total if found else None
 
 
+def md_escape(text):
+    """Render untrusted text (commit subjects, file paths, if-conditions)
+    as literal Markdown: control characters and newlines become spaces,
+    and the metacharacters that could break out of a table cell, code
+    span or link are backslash-escaped."""
+    text = "".join(ch if (ch >= " " and ch != "\x7f") else " "
+                   for ch in text)
+    return (text.replace("\\", "\\\\")
+            .replace("`", "\\`")
+            .replace("|", "\\|")
+            .replace("[", "\\[")
+            .replace("]", "\\]"))
+
+
+def _self_test():
+    """Regression checks for the summary tooling itself. Runs on every
+    invocation; a failure means the tool is defective, so the job stops."""
+    assert md_escape("a`b|c\nd[e]f\\g") == "a\\`b\\|c d\\[e\\]f\\\\g"
+    assert md_escape("\x00\x1f\r\n") == "    "
+    assert md_escape("plain text") == "plain text"
+    dur = {"test (3.11)": 60.0, "test (3.12)": 70.0, "lint": 30.0,
+           "Build the thing": 200.0}
+    assert duration_for("test", dur, {}) == 130.0
+    assert duration_for("build", dur, {"build": "Build the thing"}) == 200.0
+    assert duration_for("lint", dur, {}) == 30.0
+    assert duration_for("missing", dur, {}) is None
+    assert glob_to_regex("scripts/*.ts").match("scripts/x.ts")
+    assert not glob_to_regex("scripts/*.ts").match("scripts/ci/x.py")
+    assert glob_to_regex("a/**").match("a/b/c")
+
+
+
 def load_event(env):
     path = env.get("GITHUB_EVENT_PATH", "")
     if path and os.path.exists(path):
@@ -206,6 +238,11 @@ STATUS_WORD = {"A": "added", "M": "modified", "D": "deleted",
 
 
 def main():
+    try:
+        _self_test()
+    except AssertionError:
+        sys.exit("run_summary.py self-test failed; the summary tool is "
+                 "defective, not writing a summary")
     env = os.environ
     out = []
     repo = env.get("GITHUB_REPOSITORY", "")
@@ -259,9 +296,10 @@ def main():
             out.append("\nSkipped jobs:")
             for job in skipped:
                 cond = conditions.get(job)
-                out.append(f"- `{job}`" + (f" - runs only if `{cond}`"
-                                          if cond else
-                                          " - its condition was not met"))
+                out.append(f"- `{job}`" +
+                           (f" - runs only if {md_escape(cond)}"
+                            if cond else
+                            " - its condition was not met"))
     else:
         out.append("\nNo upstream jobs declared in `needs`.")
 
@@ -275,7 +313,8 @@ def main():
             log = sh("git", "log", "--format=%h %s", rng).strip()
             out.append("Commits:")
             for line in log.splitlines() or ["(none)"]:
-                out.append(f"- {line}")
+                short, _, subject = line.partition(" ")
+                out.append(f"- `{short}` {md_escape(subject)}")
             # -z: NUL-delimited, no quoting of non-ASCII paths.
             diff = sh("git", "diff", "--name-status", "-z", rng)
             records = [r for r in diff.split("\x00") if r]
@@ -305,7 +344,7 @@ def main():
                        f"`{MAP_PATH}` to declare which checks cover what):")
             for status, path in files:
                 word = STATUS_WORD.get(status, status)
-                out.append(f"- `{path}` ({word})")
+                out.append(f"- {md_escape(path)} ({word})")
         else:
             out.append("| File | Change | Checks covering it |")
             out.append("| --- | --- | --- |")
@@ -317,16 +356,16 @@ def main():
                         checks.extend(c for c in mapped if c not in checks)
                 word = STATUS_WORD.get(status, status)
                 if checks:
-                    out.append(f"| `{path}` | {word} | "
+                    out.append(f"| {md_escape(path)} | {word} | "
                                + ", ".join(f"`{c}`" for c in checks) + " |")
                 else:
-                    out.append(f"| `{path}` | {word} | - |")
+                    out.append(f"| {md_escape(path)} | {word} | - |")
                     uncovered.append(path)
             if uncovered:
                 out.append("\nChanged without declared coverage (no "
                            f"check in `{MAP_PATH}` maps to these files):")
                 for path in uncovered:
-                    out.append(f"- `{path}`")
+                    out.append(f"- {md_escape(path)}")
             else:
                 out.append("\nEvery changed file matches at least one "
                            "coverage mapping.")
