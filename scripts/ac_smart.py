@@ -323,6 +323,9 @@ def _general_lines(data: bytes) -> list[str]:
     lock = data[13]
     if lock:
         names = [name for bit, name in ((1, "power"), (2, "mode"), (4, "temp")) if lock & bit]
+        unknown = lock & ~0b111
+        if unknown:
+            names.append(str(unknown))  # unknown bits: show the raw remainder
         parts.append(f"remote-lock {'+'.join(names)}")
     else:
         parts.append("remote-lock off")

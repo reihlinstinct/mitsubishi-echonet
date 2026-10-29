@@ -186,6 +186,14 @@ class TestSummarize:
         assert "remote-lock off" in out
         assert "remote-lock 0" not in out
 
+    def test_remote_lock_unknown_bits_fall_back_to_raw(self) -> None:
+        code = self._code(0x02, {8: 1, 13: 8})
+        out = ac_smart.summarize(f"<LSV><CODE><VALUE>{code}</VALUE></CODE></LSV>")
+        assert "remote-lock 8" in out
+        code = self._code(0x02, {8: 1, 13: 9})
+        out = ac_smart.summarize(f"<LSV><CODE><VALUE>{code}</VALUE></CODE></LSV>")
+        assert "remote-lock power+8" in out
+
     def test_power_saving_shown_explicitly(self) -> None:
         code = self._code(0x02, {8: 1})
         out = ac_smart.summarize(f"<LSV><CODE><VALUE>{code}</VALUE></CODE></LSV>")
