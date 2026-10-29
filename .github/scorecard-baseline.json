@@ -32,6 +32,14 @@
    "evidence": "contents: write",
    "issue": "https://github.com/reihlinstinct/mitsubishi-echonet/issues/41",
    "reason": "Wiki sync job pushes docs/wiki/ to the repo wiki (documented in-file); job-scoped; reviewed."
+  },
+  {
+   "path": "Dockerfile",
+   "rule": "unhashed-pip-install",
+   "scope": "dependencies",
+   "evidence": "pip install --no-cache-dir --no-deps .",
+   "issue": "https://github.com/reihlinstinct/mitsubishi-echonet/issues/41",
+   "reason": "Pre-existing Dockerfile pip install without hash checking; tracked for --require-hashes migration in this issue."
   }
  ]
 }
