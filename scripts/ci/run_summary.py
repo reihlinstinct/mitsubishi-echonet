@@ -10,7 +10,9 @@ Stdlib-only and deterministic. Sections:
    changed without declared coverage.
 
 Everything is best-effort: a missing piece of context degrades one section,
-never the job. This step never fails the workflow.
+never the job. The one stop condition is the startup self-test: a failure
+means the tool itself is defective, so the job fails loudly instead of
+writing a wrong summary. Nothing else in this step may fail the workflow.
 """
 import datetime
 import json
