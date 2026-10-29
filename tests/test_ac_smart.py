@@ -152,3 +152,44 @@ class TestEndToEnd:
     def test_unreachable(self, capsys: pytest.CaptureFixture[str]) -> None:
         assert ac_smart.main(["--ip", "127.0.0.1:1", "--timeout", "0.2", "status"]) == 1
         assert "Failed" in capsys.readouterr().err
+
+
+class TestTransportHardening:
+    def test_redirect_not_followed(self, capsys: pytest.CaptureFixture[str]) -> None:
+        hits: list[str] = []
+
+        class Target(BaseHTTPRequestHandler):
+            def do_POST(self) -> None:
+                hits.append("target")
+
+            def log_message(self, *args: object) -> None:
+                pass
+
+        class Redirector(BaseHTTPRequestHandler):
+            def do_POST(self) -> None:
+                self.send_response(302)
+                self.send_header("Location", f"http://127.0.0.1:{target_port}/smart")
+                self.send_header("Content-Length", "0")
+                self.end_headers()
+
+            def log_message(self, *args: object) -> None:
+                pass
+
+        target = HTTPServer(("127.0.0.1", 0), Target)
+        target_port = target.server_port
+        redirector = HTTPServer(("127.0.0.1", 0), Redirector)
+        threading.Thread(target=target.serve_forever, daemon=True).start()
+        threading.Thread(target=redirector.serve_forever, daemon=True).start()
+        try:
+            rc = ac_smart.main(["--ip", f"127.0.0.1:{redirector.server_port}", "status"])
+            assert rc == 1
+            assert hits == []
+            assert "Failed" in capsys.readouterr().err
+        finally:
+            target.shutdown()
+            redirector.shutdown()
+
+    def test_proxy_env_ignored(self, mock_adapter: str, monkeypatch: pytest.MonkeyPatch) -> None:
+        # A dead proxy in the env must not capture or break the request.
+        monkeypatch.setenv("http_proxy", "http://127.0.0.1:1")
+        assert ac_smart.main(["--ip", mock_adapter, "status"]) == 0

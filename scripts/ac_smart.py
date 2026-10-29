@@ -219,12 +219,27 @@ def decrypt_xml(payload_b64: str) -> str:
     return plain.decode("utf-8", errors="ignore")
 
 
+class _NoRedirect(urllib.request.HTTPRedirectHandler):
+    """Never follow redirects: the adapter answers /smart directly."""
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        return None
+
+
+# The adapter is a fixed LAN device: a redirect or a proxy means something is
+# intercepting the traffic, so both are hard failures, not things to follow.
+_OPENER = urllib.request.build_opener(
+    urllib.request.ProxyHandler({}),  # ignore http_proxy/https_proxy env vars
+    _NoRedirect(),
+)
+
+
 def post_smart(ip: str, payload_xml: str, timeout: float = 5.0) -> str:
     body = f'<?xml version="1.0" encoding="UTF-8"?><ESV>{encrypt_xml(payload_xml)}</ESV>'
     req = urllib.request.Request(
         f"http://{ip}/smart", data=body.encode("utf-8"), headers=_HEADERS, method="POST"
     )
-    with urllib.request.urlopen(req, timeout=timeout) as resp:
+    with _OPENER.open(req, timeout=timeout) as resp:
         text = resp.read().decode("utf-8")
     root = ET.fromstring(text)
     if not root.text:
