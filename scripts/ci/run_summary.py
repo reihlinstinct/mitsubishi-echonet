@@ -90,7 +90,11 @@ def job_durations(env):
     except (urllib.error.URLError, OSError, json.JSONDecodeError):
         return {}
     durations = {}
+    if not isinstance(data, dict):
+        return durations
     for job in data.get("jobs", []):
+        if not isinstance(job, dict):
+            continue
         started, completed = job.get("started_at"), job.get("completed_at")
         if not started or not completed:
             continue
@@ -132,7 +136,7 @@ def _parse_job_meta_lines(lines):
     current = None
     in_jobs = False
     for line in lines:
-        if re.match(r"^jobs:\s*$", line):
+        if re.match(r"^jobs:\s*(?:#.*)?$", line):
             in_jobs = True
             continue
         if in_jobs:
@@ -188,7 +192,7 @@ def _log_rows(log):
     """(short hash, subject) per raw git-log record. The byte split on
     b"\n" happens before decoding, so CR/U+2028/U+2029 in a subject
     cannot forge an extra row."""
-    for raw in log.split(b"\n") or [b"(none)"]:
+    for raw in log.split(b"\n") if log else [b"(none)"]:
         line = raw.decode("utf-8", "replace")
         short, _, subject = line.partition(" ")
         yield short, subject
@@ -270,9 +274,10 @@ def _self_test():
         "Build things"
     assert _job_display_name("Test (${{ matrix.py }})") is None
     assert b"a \rb".split(b"\n") == [b"a \rb"]  # CR forges no row
-    assert list(_log_rows(b"deadbee real \r subject")) == \
+    # CR/U+2028 rows through the full sh() -> _log_rows() pipeline
+    assert list(_log_rows(sh("printf", "deadbee real \r subject"))) == \
         [("deadbee", "real \r subject")]
-    assert list(_log_rows("deadbee a\u2028b".encode())) == \
+    assert list(_log_rows(sh("printf", "deadbee a\u2028b"))) == \
         [("deadbee", "a\u2028b")]
     assert sh("printf", "a\rb") == b"a\rb"  # bytes end to end
     conds, names = _parse_job_meta_lines([
@@ -320,6 +325,35 @@ def _self_test():
         "No change range is available for this run."
     assert _no_range_reason({"GITHUB_EVENT_NAME": "workflow_dispatch"},
                             {}) == "No change range is available for this run."
+    assert _no_range_reason({"GITHUB_EVENT_NAME": "push"}, {}) == \
+        "No change range is available for this run."  # missing after
+    assert list(_log_rows(b"")) == [("(none)", "")]
+    assert changed_ranges({"GITHUB_EVENT_NAME": "pull_request"},
+                          {"pull_request": {"base": None,
+                                            "head": {"sha": "h"}}}) is None
+    assert changed_ranges({"GITHUB_EVENT_NAME": "pull_request"},
+                          {"pull_request": {"base": {"sha": "b"},
+                                            "head": {"sha": "h"}}}) == \
+        ("b..h", "b...h")
+    entries = _map_entries({"mappings": [
+        {"pattern": "src/**", "checks": ["test"]},
+        {"pattern": "a[]b", "checks": ["x"]},  # invalid regex: skipped
+        {"pattern": 3},                        # non-string: skipped
+        "junk",                                # non-dict: skipped
+        {"pattern": "docs/**", "checks": "docs"},  # non-list checks
+    ]})
+    assert [p for _rx, p, _c in entries] == ["src/**", "docs/**"]
+    assert entries[1][2] == []
+    assert _parse_needs("{") == {}
+    assert _parse_needs("[]") == {}
+    assert _parse_needs('{"a": {"result": "ok"}, "b": 3}') == \
+        {"a": {"result": "ok"}}
+    conds, _n = _parse_job_meta_lines([
+        "jobs: # trailing comment\n",
+        "  a:\n",
+        "    if: always()\n",
+    ])
+    assert conds == {"a": "always()"}
 
 
 
@@ -344,8 +378,8 @@ def changed_ranges(env, event):
     name = env.get("GITHUB_EVENT_NAME", "")
     if name == "pull_request":
         pr = event.get("pull_request") or {}
-        base = pr.get("base", {}).get("sha", "")
-        head = pr.get("head", {}).get("sha", "")
+        base = (pr.get("base") or {}).get("sha", "")
+        head = (pr.get("head") or {}).get("sha", "")
         if base and head:
             return f"{base}..{head}", f"{base}...{head}"
         return None
@@ -363,11 +397,35 @@ def changed_ranges(env, event):
 
 def _no_range_reason(env, event):
     """Why there is no change range, for the summary body."""
+    after = event.get("after", "") if isinstance(event, dict) else ""
     if env.get("GITHUB_EVENT_NAME", "") == "push" \
-            and set(event.get("after", "") or "0") == {"0"}:
+            and after and set(after) == {"0"}:
         return ("This push deleted the ref (`after` is all zeros), "
                 "so there is no change range to diff.")
     return "No change range is available for this run."
+
+
+def _map_entries(data):
+    """(regex, pattern, checks) per well-formed mapping entry; anything
+    else in the file is ignored so a broken map degrades the coverage
+    section instead of failing the job."""
+    mappings = []
+    entries = data.get("mappings", []) if isinstance(data, dict) else []
+    for entry in entries if isinstance(entries, list) else []:
+        if not isinstance(entry, dict):
+            continue
+        pattern = entry.get("pattern", "")
+        checks = entry.get("checks", [])
+        if not isinstance(pattern, str) or not pattern:
+            continue
+        if not isinstance(checks, list):
+            checks = []
+        try:
+            rx = glob_to_regex(pattern)
+        except re.error:
+            continue
+        mappings.append((rx, pattern, checks))
+    return mappings
 
 
 def load_map():
@@ -376,17 +434,23 @@ def load_map():
             data = json.load(fh)
     except (OSError, json.JSONDecodeError):
         return []
-    mappings = []
-    for entry in data.get("mappings", []):
-        pattern = entry.get("pattern", "")
-        if pattern:
-            mappings.append((glob_to_regex(pattern), pattern,
-                             entry.get("checks", [])))
-    return mappings
+    return _map_entries(data)
 
 
 STATUS_WORD = {"A": "added", "M": "modified", "D": "deleted",
                "R": "renamed", "C": "copied", "T": "type changed"}
+
+
+def _parse_needs(raw):
+    """job id -> needs context dict, from NEEDS_JSON; {} unless the
+    payload is an object whose values are objects."""
+    try:
+        data = json.loads(raw)
+    except json.JSONDecodeError:
+        return {}
+    if not isinstance(data, dict):
+        return {}
+    return {k: v for k, v in data.items() if isinstance(v, dict)}
 
 
 def main():
@@ -410,11 +474,7 @@ def main():
         out.append(f"- Commit: `{sha[:7]}`")
 
     # --- Jobs -------------------------------------------------------------
-    needs = {}
-    try:
-        needs = json.loads(env.get("NEEDS_JSON", "{}"))
-    except json.JSONDecodeError:
-        pass
+    needs = _parse_needs(env.get("NEEDS_JSON", "{}"))
     durations = job_durations(env)
     conditions, display_names = load_job_meta(env)
     if needs:
