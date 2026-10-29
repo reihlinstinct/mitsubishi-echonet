@@ -79,11 +79,13 @@ Creating any PAT, or broadening any existing token's scope, is a credentials
 change: it requires explicit owner approval beforehand and is not something
 the implementation PRs do on their own.
 
-## Bootstrap state (checked 2026-10-29)
+## Bootstrap state
+
+Rows are updated as each pilot lands. Checked 2026-10-29:
 
 | repo | wiki enabled | wiki initialized |
 | --- | --- | --- |
-| mitsubishi-echonet | no | no |
+| mitsubishi-echonet | yes | yes (pilot done) |
 | parking-reporter-app | no | no |
 | parking-reporter-ios | yes | no |
 | parking-report-helper | yes | no |
