@@ -6,9 +6,10 @@ channel the MELCloud Home app uses on the LAN). No cloud, no dependencies:
 Python 3.10+ standard library only.
 
 Usage:
-    python3 ac_smart.py --ip 192.168.88.30 status   # read-only: power, mode, temps
-    python3 ac_smart.py --ip 192.168.88.30 on       # power on (keeps last mode/temp)
-    python3 ac_smart.py --ip 192.168.88.30 off      # power off
+    python3 ac_smart.py --ip 192.168.88.30 status       # read-only: power, mode, temps
+    python3 ac_smart.py --ip 192.168.88.30 on           # power on (keeps last mode/temp)
+    python3 ac_smart.py --ip 192.168.88.30 off          # power off
+    python3 ac_smart.py --ip 192.168.88.30 echonet-test # is ECHONET Lite answering on UDP 3610?
 
 Protocol (community-reverse-engineered, pymitsubishi/mac-577if-e):
 request body <?xml ...?><ESV>base64(iv + AES-128-CBC(key, iso7816-padded XML))</ESV>
@@ -21,7 +22,9 @@ from __future__ import annotations
 
 import argparse
 import base64
+import contextlib
 import os
+import socket
 import sys
 import urllib.request
 import xml.etree.ElementTree as ET
@@ -389,15 +392,102 @@ def cmd_power(ip: str, on: bool, timeout: float) -> int:
     return 0
 
 
+# --------------------------------------------------------------------------
+# ECHONET Lite probe (UDP 3610)
+
+_ECHONET_PORT = 3610
+_MULTICAST_GROUP = "224.0.23.0"  # ECHONET Lite IPv4 multicast group (spec)
+# Get operation status (EPC 0x80) from the home air conditioner (0x013001):
+_GET_AC_POWER = bytes.fromhex("1081000105ff0101300162018000")
+# Get self-node instance list (EPC 0xD6) from the node profile (0x0EF001):
+_GET_NODE_LIST = bytes.fromhex("1081000205ff010ef0016201d600")
+
+
+def _echonet_listen(sock: socket.socket, deadline: float, out: list[str]) -> None:
+    import time as _time
+
+    while True:
+        remaining = deadline - _time.monotonic()
+        if remaining <= 0:
+            return
+        sock.settimeout(remaining)
+        try:
+            data, (addr, _port) = sock.recvfrom(4096)
+        except TimeoutError:
+            return
+        if data in (_GET_AC_POWER, _GET_NODE_LIST):
+            continue  # multicast loopback echoing our own probe
+        if len(data) >= 12 and data[0] == 0x10 and data[1] == 0x81:
+            note = ""
+            if data[10] == 0x72 and len(data) >= 14 and data[12] == 0x80 and data[14:15]:
+                note = f" (power {'ON' if data[14] == 0x30 else 'off'})"
+            out.append(f"reply from {addr}: {data.hex()}{note}")
+        else:
+            out.append(f"non-ECHONET datagram from {addr}: {data.hex()}")
+
+
+def cmd_echonet_test(ip: str, timeout: float) -> int:
+    """Probe ECHONET Lite: unicast Get, then multicast node-profile discovery.
+
+    These adapters send replies to UDP port 3610 (not to the request's source
+    port), so the socket must be bound to 3610 - an ephemeral source port sees
+    silence even when ECHONET is on.
+    """
+    import time as _time
+
+    out: list[str] = []
+    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    try:
+        sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        sock.bind(("", _ECHONET_PORT))
+    except OSError as exc:
+        sock.close()
+        print(f"Cannot bind UDP 3610: {exc}", file=sys.stderr)
+        print("Something else is already listening on 3610 (Home Assistant? Homebridge?).",
+              file=sys.stderr)
+        return 1
+    try:
+        sock.sendto(_GET_AC_POWER, (ip, _ECHONET_PORT))
+        _echonet_listen(sock, _time.monotonic() + timeout, out)
+        if out:
+            print("\n".join(out))
+            print("ECHONET Lite is ENABLED and answering.")
+            return 0
+        print(f"No unicast reply within {timeout}s; trying multicast discovery...")
+        with contextlib.suppress(OSError):
+            sock.setsockopt(
+                socket.IPPROTO_IP,
+                socket.IP_ADD_MEMBERSHIP,
+                socket.inet_aton(_MULTICAST_GROUP) + socket.inet_aton("0.0.0.0"),
+            )
+        try:
+            sock.sendto(_GET_NODE_LIST, (_MULTICAST_GROUP, _ECHONET_PORT))
+        except OSError as exc:
+            print(f"multicast send failed: {exc}")
+        _echonet_listen(sock, _time.monotonic() + timeout, out)
+        if out:
+            print("\n".join(out))
+            print("ECHONET Lite devices answered the multicast probe (see above).")
+            return 0
+        print("No ECHONET reply on unicast or multicast.")
+        print("If the adapter reports ECHONET: ON via 'status', check for client")
+        print("isolation / UDP filtering on the Wi-Fi, or a firewall on this machine.")
+        return 1
+    finally:
+        sock.close()
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--ip", required=True, help="adapter IP on the local network")
     parser.add_argument("--timeout", type=float, default=5.0, help="seconds (default 5)")
-    parser.add_argument("command", choices=["status", "on", "off"])
+    parser.add_argument("command", choices=["status", "on", "off", "echonet-test"])
     args = parser.parse_args(argv)
     try:
         if args.command == "status":
             return cmd_status(args.ip, args.timeout)
+        if args.command == "echonet-test":
+            return cmd_echonet_test(args.ip, args.timeout)
         return cmd_power(args.ip, args.command == "on", args.timeout)
     except (OSError, RuntimeError, ET.ParseError) as exc:
         print(f"Failed: {exc}", file=sys.stderr)

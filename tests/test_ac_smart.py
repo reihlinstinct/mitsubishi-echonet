@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import importlib.util
+import socket
 import threading
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
@@ -246,3 +247,51 @@ class TestTransportHardening:
         # A dead proxy in the env must not capture or break the request.
         monkeypatch.setenv("http_proxy", "http://127.0.0.1:1")
         assert ac_smart.main(["--ip", mock_adapter, "status"]) == 0
+
+
+class TestEchonetTest:
+    def _responder(self) -> threading.Thread:
+        def serve() -> None:
+            r = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            r.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            r.bind(("127.0.0.1", 3610))
+            r.settimeout(5)
+            try:
+                r.recvfrom(4096)
+            finally:
+                r.close()
+            # Reply like the real adapter: to port 3610, from an ephemeral port.
+            w = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            w.sendto(bytes.fromhex("1081000101300105ff017201800130"), ("127.0.0.1", 3610))
+            w.close()
+
+        t = threading.Thread(target=serve, daemon=True)
+        t.start()
+        return t
+
+    def test_enabled_reply(self, capsys: pytest.CaptureFixture[str]) -> None:
+        import time
+
+        self._responder()
+        time.sleep(0.1)
+        rc = ac_smart.main(["--ip", "127.0.0.1", "--timeout", "2", "echonet-test"])
+        assert rc == 0
+        out = capsys.readouterr().out
+        assert "ECHONET Lite is ENABLED" in out
+        assert "power ON" in out
+
+    def test_no_reply(self, capsys: pytest.CaptureFixture[str]) -> None:
+        # Drain any stale datagram left on 3610 by the previous test's responder.
+        drain = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        drain.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        drain.bind(("", 3610))
+        drain.settimeout(0.05)
+        try:
+            while True:
+                drain.recvfrom(4096)
+        except TimeoutError:
+            pass
+        drain.close()
+        rc = ac_smart.main(["--ip", "127.0.0.1", "--timeout", "0.3", "echonet-test"])
+        assert rc == 1
+        assert "No ECHONET reply" in capsys.readouterr().out
