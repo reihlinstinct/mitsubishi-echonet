@@ -136,7 +136,7 @@ def _parse_job_meta_lines(lines):
             in_jobs = True
             continue
         if in_jobs:
-            m = re.match(r"^  ([A-Za-z0-9_.-]+):\s*$", line)
+            m = re.match(r"^  ([A-Za-z0-9_.-]+):\s*(?:#.*)?$", line)
             if m:
                 current = m.group(1)
                 continue
@@ -144,6 +144,12 @@ def _parse_job_meta_lines(lines):
             if stripped and not stripped.startswith("#") \
                     and not line.startswith(" "):
                 in_jobs = False
+                current = None
+                continue
+            if stripped and not stripped.startswith("#") \
+                    and re.match(r"^  \S", line):
+                # Unrecognized job-level key (e.g. a quoted id): do not
+                # attribute later if:/name: lines to the previous job.
                 current = None
                 continue
             m = re.match(r"^    if:\s*(.+?)\s*$", line)
@@ -276,6 +282,19 @@ def _self_test():
     assert conds == {"a": "github.ref == 'refs/heads/main'",
                      "b": "always()"}
     assert names == {"b": "Build (issue"}
+    conds, names = _parse_job_meta_lines([
+        "jobs:\n",
+        "  a:\n",
+        "    if: github.ref == 'refs/heads/main'\n",
+        "  b: # trailing comment\n",
+        "    if: always()\n",
+        "    name: Lint\n",
+        "  'quoted-id':\n",
+        "    if: wrong()\n",
+    ])
+    assert conds == {"a": "github.ref == 'refs/heads/main'",
+                     "b": "always()"}  # trailing comment recognized
+    assert names == {"b": "Lint"}  # quoted id clears current, if dropped
 
 
 
