@@ -321,8 +321,12 @@ def _general_lines(data: bytes) -> list[str]:
         parts.append(f"dehum {data[17]}")
     if data[18]:
         parts.append("power-saving")
-    if data[13]:
-        parts.append(f"remote-lock {data[13]}")
+    lock = data[13]
+    if lock:
+        names = [name for bit, name in ((1, "power"), (2, "mode"), (4, "temp")) if lock & bit]
+        parts.append(f"remote-lock {'+'.join(names)}")
+    else:
+        parts.append("remote-lock off")
     return ["AC: " + ", ".join(parts)]
 
 
