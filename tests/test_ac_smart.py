@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import importlib.util
+import socket
 import threading
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
@@ -108,13 +109,66 @@ CANNED_LSV = (
 class TestSummarize:
     def test_parses_states(self) -> None:
         out = ac_smart.summarize(CANNED_LSV)
-        assert "AC power: ON, mode: cool, set temp: 24 C" in out
-        assert "room temp: 23 C" in out
+        assert "AC: power ON, mode cool, set 24 C" in out
+        assert "sensors: room 23 C" in out
         assert "ECHONET: ON" in out
         assert "APP_VER: 40.00" in out
 
     def test_unparseable_passthrough(self) -> None:
         assert ac_smart.summarize("not xml") == "not xml"
+
+    # Real CODE frames captured from a MAC-577IF-E (app v40.00) - state data
+    # only, no identifiers. pymitsubishi parses them to: power off, dry, 25 C,
+    # fan auto, vane V2/left, room 23.5 C, no error, energy idle, auto off.
+    REAL_CODES = [
+        "fc620130100200000002060002000002b2000000009d",
+        "fc620130100300000d0000af0000000000000000009e",
+        "fc6201301004000000800000000000000000000000d9",
+        "fc620130100500000000000000000000000000000058",
+        "fc620130100600000300000000000000000000000054",
+        "fc620130100900000000000000000000000000000054",
+    ]
+
+    def test_real_capture_matches_pymitsubishi(self) -> None:
+        lsv = "<LSV>" + "".join(
+            f"<CODE><VALUE>{c}</VALUE></CODE>" for c in self.REAL_CODES
+        ) + "</LSV>"
+        out = ac_smart.summarize(lsv)
+        assert "AC: power off, mode dry, set 25 C, fan auto, vane V2/left" in out
+        assert "sensors: room 23.5 C" in out
+        assert "error: none" in out
+        assert "energy: idle, now 0 W, lifetime 0 kWh" in out
+        assert "auto mode: off, demand level 0" in out
+
+    def _code(self, kind: int, fill: dict[int, int], length: int = 22) -> str:
+        data = bytearray(length)
+        data[0:6] = bytes([0xFC, 0x62, 0x01, 0x30, 0x10, kind])
+        for pos, val in fill.items():
+            data[pos] = val
+        return data.hex()
+
+    def test_sensor_outdoor_and_runtime(self) -> None:
+        code = self._code(0x03, {8: 13, 10: 0x80 + 40, 11: 0x80 + 47, 17: 5})
+        out = ac_smart.summarize(f"<LSV><CODE><VALUE>{code}</VALUE></CODE></LSV>")
+        assert "sensors: room 23.5 C, outdoor 20 C" in out
+        assert "compressor runtime 1280 min" in out
+
+    def test_error_code_shown(self) -> None:
+        code = self._code(0x04, {9: 0x6A, 10: 0x30}, length=21)
+        out = ac_smart.summarize(f"<LSV><CODE><VALUE>{code}</VALUE></CODE></LSV>")
+        assert "error: code 0x6a30" in out
+
+    def test_energy_watts(self) -> None:
+        code = self._code(0x06, {9: 1, 11: 0x96, 13: 0x64})
+        out = ac_smart.summarize(f"<LSV><CODE><VALUE>{code}</VALUE></CODE></LSV>")
+        assert "energy: running, now 150 W, lifetime 10 kWh" in out
+
+    def test_general_extras(self) -> None:
+        code = self._code(0x02, {8: 1, 9: 0x0B, 10: 9, 11: 3, 12: 7, 16: 0xAC, 17: 50, 18: 1})
+        out = ac_smart.summarize(f"<LSV><CODE><VALUE>{code}</VALUE></CODE></LSV>")
+        assert "mode cool" in out and "i-See on" in out
+        assert "dehum 50" in out and "power-saving" in out
+        assert "fan S3" in out and "vane swing/auto" in out
 
 
 @pytest.fixture()
@@ -143,7 +197,7 @@ class TestEndToEnd:
     def test_status(self, mock_adapter: str, capsys: pytest.CaptureFixture[str]) -> None:
         assert ac_smart.main(["--ip", mock_adapter, "status"]) == 0
         out = capsys.readouterr().out
-        assert "AC power: ON, mode: cool" in out
+        assert "AC: power ON, mode cool" in out
 
     def test_power_on(self, mock_adapter: str, capsys: pytest.CaptureFixture[str]) -> None:
         assert ac_smart.main(["--ip", mock_adapter, "on"]) == 0
@@ -193,3 +247,51 @@ class TestTransportHardening:
         # A dead proxy in the env must not capture or break the request.
         monkeypatch.setenv("http_proxy", "http://127.0.0.1:1")
         assert ac_smart.main(["--ip", mock_adapter, "status"]) == 0
+
+
+class TestEchonetTest:
+    def _responder(self) -> threading.Thread:
+        def serve() -> None:
+            r = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            r.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            r.bind(("127.0.0.1", 3610))
+            r.settimeout(5)
+            try:
+                r.recvfrom(4096)
+            finally:
+                r.close()
+            # Reply like the real adapter: to port 3610, from an ephemeral port.
+            w = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            w.sendto(bytes.fromhex("1081000101300105ff017201800130"), ("127.0.0.1", 3610))
+            w.close()
+
+        t = threading.Thread(target=serve, daemon=True)
+        t.start()
+        return t
+
+    def test_enabled_reply(self, capsys: pytest.CaptureFixture[str]) -> None:
+        import time
+
+        self._responder()
+        time.sleep(0.1)
+        rc = ac_smart.main(["--ip", "127.0.0.1", "--timeout", "2", "echonet-test"])
+        assert rc == 0
+        out = capsys.readouterr().out
+        assert "ECHONET Lite is ENABLED" in out
+        assert "power ON" in out
+
+    def test_no_reply(self, capsys: pytest.CaptureFixture[str]) -> None:
+        # Drain any stale datagram left on 3610 by the previous test's responder.
+        drain = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        drain.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        drain.bind(("", 3610))
+        drain.settimeout(0.05)
+        try:
+            while True:
+                drain.recvfrom(4096)
+        except TimeoutError:
+            pass
+        drain.close()
+        rc = ac_smart.main(["--ip", "127.0.0.1", "--timeout", "0.3", "echonet-test"])
+        assert rc == 1
+        assert "No ECHONET reply" in capsys.readouterr().out
