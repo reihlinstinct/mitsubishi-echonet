@@ -12,7 +12,7 @@ UDP 3610 - no cloud - through anything that speaks ECHONET Lite: Home Assistant
 (`echonetlite_homeassistant`), Homebridge (`homebridge-echonet-hvac`, for Apple
 HomeKit), and others. MELCloud / MELCloud Home keeps working in parallel.
 
-Hebrew step-by-step guide: [docs/guide-he.md](docs/guide-he.md).
+Hebrew step-by-step guide: the [wiki](https://github.com/reihlinstinct/mitsubishi-echonet/wiki) (source: [docs/wiki/he-ac-local-control.md](docs/wiki/he-ac-local-control.md), PR-reviewed).
 Design and protocol notes: [docs/DESIGN.md](docs/DESIGN.md).
 Scheduling research (Shabbat clock, timers): [docs/DESIGN-scheduler.md](docs/DESIGN-scheduler.md).
 
