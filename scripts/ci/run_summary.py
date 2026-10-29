@@ -99,6 +99,15 @@ def job_durations(env):
     return durations
 
 
+def _yaml_plain_scalar(text):
+    """Strip a trailing comment from an unquoted YAML scalar: in a plain
+    scalar, ` #` starts a comment (name: X (issue #14) parses as X
+    (issue). Quoted scalars are returned unchanged."""
+    if text.startswith(("'", '"')):
+        return text
+    return text.split(" #", 1)[0].rstrip()
+
+
 def load_job_meta(env):
     """(job id -> `if:` expression, job id -> static display name), parsed
     from the workflow file. Job-level keys sit at 4-space indent; `name:`
@@ -132,7 +141,7 @@ def load_job_meta(env):
                         continue
                     m = re.match(r"^    name:\s*(.+?)\s*$", line)
                     if m and current and "${{" not in m.group(1):
-                        names[current] = m.group(1)
+                        names[current] = _yaml_plain_scalar(m.group(1))
     except OSError:
         return {}, {}
     return conditions, names
@@ -207,6 +216,9 @@ def _self_test():
     assert glob_to_regex("scripts/*.ts").match("scripts/x.ts")
     assert not glob_to_regex("scripts/*.ts").match("scripts/ci/x.py")
     assert glob_to_regex("a/**").match("a/b/c")
+    assert _yaml_plain_scalar("Language shootout (issue #14)") == \
+        "Language shootout (issue"
+    assert _yaml_plain_scalar('"a # b"') == '"a # b"'
 
 
 
