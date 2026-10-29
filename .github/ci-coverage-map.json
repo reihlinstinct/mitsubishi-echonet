@@ -1,0 +1,33 @@
+{
+  "mappings": [
+    {
+      "pattern": "src/**",
+      "checks": [
+        "lint",
+        "test",
+        "container"
+      ]
+    },
+    {
+      "pattern": "tests/**",
+      "checks": [
+        "lint",
+        "test"
+      ]
+    },
+    {
+      "pattern": "Dockerfile",
+      "checks": [
+        "container"
+      ]
+    },
+    {
+      "pattern": "pyproject.toml",
+      "checks": [
+        "lint",
+        "test",
+        "container"
+      ]
+    }
+  ]
+}
