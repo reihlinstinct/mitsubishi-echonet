@@ -138,6 +138,29 @@ mitsubishi-echonet disable --ip 192.168.1.50   # כיבוי
 mitsubishi-echonet discover                    # מציאת מכשירי ECHONET ברשת
 ```
 
+## הרצה בקונטיינר (בלי להתקין כלום על המחשב)
+
+אם לא רוצים להתקין פייתון/חבילות על המחשב, הכלי רץ בקונטיינר (docker או podman -
+אותן פקודות בדיוק):
+
+```bash
+git clone https://github.com/reihlinstinct/mitsubishi-echonet.git
+cd mitsubishi-echonet
+docker build -t mitsubishi-echonet .
+
+docker run --rm --network host mitsubishi-echonet status  --ip 192.168.1.50
+docker run --rm --network host mitsubishi-echonet enable  --ip 192.168.1.50
+docker run --rm --network host mitsubishi-echonet disable --ip 192.168.1.50
+docker run --rm --network host mitsubishi-echonet discover
+```
+
+- `--network host` נחוץ בלינוקס כדי שבדיקת ה-UDP (וסריקת ה-multicast של
+  discover) יגיעו למתאם; בלעדיו status ו-discover לא יקבלו תשובות.
+- האימג' מינימלי (Alpine, נעוץ ב-digest), רץ כמשתמש לא-רוט, ולא מתקין אף חבילה
+  חיצונית - רק ספריית התקן של פייתון.
+- פקודות ה-curl וה-python מהסעיפים הקודמים לא צריכות קונטיינר בכלל - הן רצות
+  ישירות במערכת.
+
 ## אזהרות
 
 - ל-ECHONET Lite **אין אימות ואין הצפנה** - כל מכשיר ברשת יכול לשלוט במזגן.

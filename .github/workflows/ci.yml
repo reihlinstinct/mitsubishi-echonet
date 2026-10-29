@@ -32,3 +32,19 @@ jobs:
           python-version: ${{ matrix.python-version }}
       - run: pip install -e . pytest pytest-cov
       - run: pytest
+
+  container:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - name: Build image
+        run: docker build -t mitsubishi-echonet:test .
+      - name: Smoke test
+        run: |
+          docker run --rm mitsubishi-echonet:test --version
+          # status against an unreachable TEST-NET address must exit non-zero,
+          # proving the CLI and its network path work inside the image.
+          if docker run --rm --network host mitsubishi-echonet:test status --ip 192.0.2.1 --timeout 1; then
+            echo "expected non-zero exit for an unreachable adapter" >&2
+            exit 1
+          fi
