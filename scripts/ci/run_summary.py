@@ -306,6 +306,13 @@ def _self_test():
                      "quoted-id": "github.event_name == 'push'"}
     assert names == {"b": "Lint", "quoted-id": "Quoted"}
     # "c: {}" matches no header form: current cleared, if: dropped
+    assert changed_ranges({"GITHUB_EVENT_NAME": "push"},
+                          {"before": "abc", "after": "def"}) == \
+        ("abc..def", "abc..def")
+    assert changed_ranges({"GITHUB_EVENT_NAME": "push"},
+                          {"before": "abc", "after": "0" * 40}) is None
+    assert changed_ranges({"GITHUB_EVENT_NAME": "push"},
+                          {"before": "0" * 40, "after": "def"}) is None
 
 
 
@@ -328,7 +335,6 @@ def changed_ranges(env, event):
     base..head and diff files base...head (merge base) instead. On push,
     before..after serves both."""
     name = env.get("GITHUB_EVENT_NAME", "")
-    sha = env.get("GITHUB_SHA", "")
     if name == "pull_request":
         pr = event.get("pull_request") or {}
         base = pr.get("base", {}).get("sha", "")
@@ -337,9 +343,14 @@ def changed_ranges(env, event):
             return f"{base}..{head}", f"{base}...{head}"
         return None
     if name == "push":
+        # Use the payload's after, not GITHUB_SHA: on a branch deletion
+        # after is all zeros while GITHUB_SHA points at the default
+        # branch, which would list and diff unrelated commits.
         before = event.get("before", "")
-        if before and set(before) != {"0"} and sha:
-            return f"{before}..{sha}", f"{before}..{sha}"
+        after = event.get("after", "")
+        if (before and set(before) != {"0"}
+                and after and set(after) != {"0"}):
+            return f"{before}..{after}", f"{before}..{after}"
     return None
 
 
