@@ -14,6 +14,7 @@ HomeKit), and others. MELCloud / MELCloud Home keeps working in parallel.
 
 Hebrew step-by-step guide: [docs/guide-he.md](docs/guide-he.md).
 Design and protocol notes: [docs/DESIGN.md](docs/DESIGN.md).
+Scheduling research (Shabbat clock, timers): [docs/DESIGN-scheduler.md](docs/DESIGN-scheduler.md).
 
 ## Safety and fair warning
 
@@ -67,6 +68,9 @@ mitsubishi-echonet disable --ip 192.168.1.50
 
 # Find all ECHONET Lite devices on the network
 mitsubishi-echonet discover
+
+# Read-only: list the adapter's supported ECHONET properties (incl. timers)
+mitsubishi-echonet capabilities --ip 192.168.1.50
 ```
 
 Don't want to install anything? The enable/disable steps are single curl

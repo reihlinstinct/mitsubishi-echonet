@@ -38,6 +38,12 @@ def build_parser() -> argparse.ArgumentParser:
     )
     _add_common(status)
 
+    caps = sub.add_parser(
+        "capabilities",
+        help="read-only: list the adapter's supported ECHONET properties (incl. timers)",
+    )
+    _add_common(caps)
+
     disc = sub.add_parser("discover", help="multicast discovery of ECHONET Lite devices")
     disc.add_argument("--timeout", type=float, default=3.0, help="seconds to listen (default 3)")
 
@@ -79,6 +85,45 @@ def _cmd_status(ip: str, timeout: float) -> int:
     return 1
 
 
+def _cmd_capabilities(ip: str, timeout: float) -> int:
+    maps = echonet.read_property_maps(ip, timeout=timeout)
+    if all(value is None for value in maps.values()):
+        if echonet.tcp_reachable(ip, 80, timeout=timeout):
+            print(f"{ip}: adapter reachable on port 80, but no ECHONET reply")
+            print(f"ECHONET Lite is OFF. Run 'mitsubishi-echonet enable --ip {ip}' first.")
+        else:
+            print(
+                f"{ip}: no ECHONET reply and port 80 unreachable",
+                file=sys.stderr,
+            )
+            print("Adapter offline or wrong IP/network.", file=sys.stderr)
+        return 1
+    labels = (
+        (echonet.EPC_STATUS_CHANGE_MAP, "status-change"),
+        (echonet.EPC_SET_PROPERTY_MAP, "set"),
+        (echonet.EPC_GET_PROPERTY_MAP, "get"),
+    )
+    for map_epc, label in labels:
+        props = maps[map_epc]
+        if props is None:
+            print(f"{label} property map: no reply")
+            continue
+        print(f"{label} property map ({len(props)} properties):")
+        for code in sorted(props):
+            print(f"  {code:#04x} {echonet.EPC_NAMES.get(code, '-')}")
+    get_map = maps[echonet.EPC_GET_PROPERTY_MAP] or []
+    set_map = maps[echonet.EPC_SET_PROPERTY_MAP] or []
+    timers = sorted(code for code in echonet.TIMER_EPCS if code in get_map or code in set_map)
+    if timers:
+        print(
+            "Timer properties exposed: "
+            + ", ".join(f"{code:#04x} {echonet.EPC_NAMES[code]}" for code in timers)
+        )
+    else:
+        print("No ECHONET timer properties (0x90-0x96) exposed by this adapter.")
+    return 0
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     if args.command == "enable":
@@ -87,6 +132,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         return _run_toggle(smart.disable_echonet, args.ip, args.timeout, "disabled")
     if args.command == "status":
         return _cmd_status(args.ip, args.timeout)
+    if args.command == "capabilities":
+        return _cmd_capabilities(args.ip, args.timeout)
     if args.command == "discover":
         results = echonet.discover(timeout=args.timeout)
         if not results:

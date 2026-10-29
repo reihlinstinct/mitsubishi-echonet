@@ -39,6 +39,31 @@ ESV_GET_SNA = 0x52
 EPC_OPERATION_STATUS = 0x80
 EPC_SELF_NODE_INSTANCE_LIST_S = 0xD6
 
+# Property maps (common to all ECHONET objects): which properties exist.
+EPC_STATUS_CHANGE_MAP = 0x9D
+EPC_SET_PROPERTY_MAP = 0x9E
+EPC_GET_PROPERTY_MAP = 0x9F
+
+# Home air conditioner class (0x0130) timer properties. All optional: whether a
+# given adapter exposes them shows up in its property maps.
+EPC_ON_TIMER_RESERVATION = 0x90
+EPC_ON_TIMER_TIME = 0x91
+EPC_ON_TIMER_RELATIVE = 0x92
+EPC_OFF_TIMER_RESERVATION = 0x94
+EPC_OFF_TIMER_TIME = 0x95
+EPC_OFF_TIMER_RELATIVE = 0x96
+
+TIMER_EPCS = frozenset(
+    {
+        EPC_ON_TIMER_RESERVATION,
+        EPC_ON_TIMER_TIME,
+        EPC_ON_TIMER_RELATIVE,
+        EPC_OFF_TIMER_RESERVATION,
+        EPC_OFF_TIMER_TIME,
+        EPC_OFF_TIMER_RELATIVE,
+    }
+)
+
 ESV_NAMES = {
     ESV_SET_I: "SetI",
     ESV_GET: "Get",
@@ -56,9 +81,19 @@ CLASS_NAMES = {
 EPC_NAMES = {
     EPC_OPERATION_STATUS: "operation status",
     EPC_SELF_NODE_INSTANCE_LIST_S: "self-node instance list S",
+    EPC_STATUS_CHANGE_MAP: "status-change property map",
+    EPC_SET_PROPERTY_MAP: "set property map",
+    EPC_GET_PROPERTY_MAP: "get property map",
+    EPC_ON_TIMER_RESERVATION: "ON-timer reservation",
+    EPC_ON_TIMER_TIME: "ON-timer time setting",
+    EPC_ON_TIMER_RELATIVE: "ON-timer relative time setting",
+    EPC_OFF_TIMER_RESERVATION: "OFF-timer reservation",
+    EPC_OFF_TIMER_TIME: "OFF-timer time setting",
+    EPC_OFF_TIMER_RELATIVE: "OFF-timer relative time setting",
+    0xA0: "air flow rate",
+    0xA3: "automatic swing of air flow",
+    0xB0: "operation mode",
     0xB3: "set temperature",
-    0xA0: "operation mode",
-    0xA3: "fan speed",
     0xBB: "measured room temperature",
 }
 
@@ -174,6 +209,51 @@ def build_get_request(
         esv=ESV_GET,
         properties=(EchonetProperty(epc),),
     ).to_bytes()
+
+
+def parse_property_map(edt: bytes) -> list[int]:
+    """Decode a property-map EDT (EPC 0x9D/0x9E/0x9F) into EPC codes.
+
+    First byte is the property count. Fewer than 16 properties: that many EPC
+    bytes follow. 16 or more: a 16-byte bitmap follows, where bit j (LSB
+    first) of byte i marks EPC 0x80 + 0x10 * j + i.
+    """
+    if not edt:
+        return []
+    count = edt[0]
+    if count < 16:
+        return list(edt[1 : 1 + count])
+    epcs = []
+    for i, byte in enumerate(edt[1:17]):
+        for j in range(8):
+            if byte & (1 << j):
+                epcs.append(0x80 + 0x10 * j + i)
+    return epcs
+
+
+def read_property_maps(
+    ip: str,
+    *,
+    timeout: float = 3.0,
+    deoj: int = EOJ_HOME_AIR_CONDITIONER,
+) -> dict[int, list[int] | None]:
+    """Read the status-change/set/get property maps of one object.
+
+    Values are decoded EPC lists, or None when that map got no reply (adapter
+    offline, ECHONET disabled, or the map unreadable).
+    """
+    maps: dict[int, list[int] | None] = {}
+    for offset, epc in enumerate(
+        (EPC_STATUS_CHANGE_MAP, EPC_SET_PROPERTY_MAP, EPC_GET_PROPERTY_MAP)
+    ):
+        maps[epc] = None
+        result = query(ip, tid=offset + 1, deoj=deoj, epc=epc, timeout=timeout)
+        if result is None:
+            continue
+        for prop in result.frame.properties:
+            if prop.epc == epc:
+                maps[epc] = parse_property_map(prop.edt)
+    return maps
 
 
 @dataclass(frozen=True)
