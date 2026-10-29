@@ -99,13 +99,16 @@ def job_durations(env):
     return durations
 
 
-def load_if_conditions(env):
-    """job id -> its `if:` expression, parsed from the workflow file."""
+def load_job_meta(env):
+    """(job id -> `if:` expression, job id -> static display name), parsed
+    from the workflow file. Job-level keys sit at 4-space indent; `name:`
+    values containing expressions are skipped (not statically knowable)."""
     ref = env.get("GITHUB_WORKFLOW_REF", "")
     path = ref.split("@")[0].split("/", 2)[-1] if "@" in ref else ""
     if not path or not os.path.exists(path):
-        return {}
+        return {}, {}
     conditions = {}
+    names = {}
     current = None
     try:
         with open(path, encoding="utf-8") as fh:
@@ -126,9 +129,36 @@ def load_if_conditions(env):
                     m = re.match(r"^    if:\s*(.+?)\s*$", line)
                     if m and current:
                         conditions[current] = m.group(1)
+                        continue
+                    m = re.match(r"^    name:\s*(.+?)\s*$", line)
+                    if m and current and "${{" not in m.group(1):
+                        names[current] = m.group(1)
     except OSError:
-        return {}
-    return conditions
+        return {}, {}
+    return conditions, names
+
+
+def duration_for(job_id, durations, display_names):
+    """Seconds for one needs-context job id, matched against API display
+    names: exact id, then a static workflow `name:`, then matrix children
+    ("<id> (<value>)"). None when nothing matches."""
+    candidates = [job_id]
+    disp = display_names.get(job_id)
+    if disp and disp != job_id:
+        candidates.append(disp)
+    total = 0.0
+    found = False
+    for cand in candidates:
+        if cand in durations:
+            total += durations[cand]
+            found = True
+        else:
+            children = [v for n, v in durations.items()
+                        if n.startswith(cand + " (")]
+            if children:
+                total += sum(children)
+                found = True
+    return total if found else None
 
 
 def load_event(env):
@@ -197,7 +227,7 @@ def main():
     except json.JSONDecodeError:
         pass
     durations = job_durations(env)
-    conditions = load_if_conditions(env)
+    conditions, display_names = load_job_meta(env)
     if needs:
         out.append("\n### Jobs\n")
         out.append("| Job | Result | Duration |")
@@ -207,7 +237,7 @@ def main():
         for job in sorted(needs):
             result = needs[job].get("result", "unknown")
             counts[result] = counts.get(result, 0) + 1
-            dur = durations.get(job)
+            dur = duration_for(job, durations, display_names)
             if dur is not None:
                 total += dur
             out.append(f"| `{job}` | {result} | "
@@ -293,8 +323,8 @@ def main():
                     out.append(f"| `{path}` | {word} | - |")
                     uncovered.append(path)
             if uncovered:
-                out.append("\nChanged without declared coverage "
-                           f"(no mapping in `{MAP_PATH}`):")
+                out.append("\nChanged without declared coverage (no "
+                           f"check in `{MAP_PATH}` maps to these files):")
                 for path in uncovered:
                     out.append(f"- `{path}`")
             else:
