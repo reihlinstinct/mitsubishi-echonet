@@ -5,7 +5,8 @@ on:
     branches: [main]
   pull_request:
   schedule:
-    # Weekly full suite: Sunday 06:00 Israel time (04:00 UTC, winter offset).
+    # Weekly full suite: Sunday 06:00 Israel winter time (04:00 UTC;
+    # runs 07:00 IDT in summer).
     - cron: '0 4 * * 0'
 
 permissions: {}
@@ -34,7 +35,9 @@ jobs:
             exit 0
           fi
           git diff --name-only "origin/${{ github.base_ref }}...HEAD" | tee /tmp/changed.txt
-          if grep -qvE '\.md$|^docs/|^\.github/(ISSUE_TEMPLATE|PULL_REQUEST_TEMPLATE)' /tmp/changed.txt; then
+          # Doc-only allowlist: markdown, images, license and community
+          # metadata. Anything else (including docs/ app code) runs the suite.
+          if grep -qvEi '\.(md|markdown|rst|png|jpe?g|gif|svg|webp|ico)$|^LICENSE$|^\.github/(ISSUE_TEMPLATE|PULL_REQUEST_TEMPLATE|CODEOWNERS|FUNDING\.yml)' /tmp/changed.txt; then
             echo "code=true" >> "$GITHUB_OUTPUT"
           else
             echo "code=false" >> "$GITHUB_OUTPUT"
@@ -109,7 +112,7 @@ jobs:
       contents: read
     name: Run summary
     if: always()
-    needs: [lint, test, container]
+    needs: [changes, lint, test, container]
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -117,7 +120,24 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
       - name: Write run summary
+        if: always()
         env:
           NEEDS_JSON: ${{ toJSON(needs) }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: python3 scripts/ci/run_summary.py
+      - name: Fail on failed or cancelled dependencies
+        if: always()
+        env:
+          NEEDS_JSON: ${{ toJSON(needs) }}
+        run: |
+          # Deliberate docs-only skips are allowed; a failed or cancelled
+          # dependency must fail this gate.
+          python3 - <<'PY'
+          import json, os, sys
+          needs = json.loads(os.environ["NEEDS_JSON"])
+          bad = {k: v["result"] for k, v in needs.items() if v["result"] not in ("success", "skipped")}
+          if bad:
+              print("Dependencies failed or cancelled:", bad)
+              sys.exit(1)
+          print("All dependencies succeeded or were deliberately skipped.")
+          PY
