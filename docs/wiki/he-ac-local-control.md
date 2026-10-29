@@ -139,6 +139,15 @@ mitsubishi-echonet discover                    # מציאת מכשירי ECHONET
 mitsubishi-echonet capabilities --ip 192.168.1.50   # יכולות המתאם, כולל טיימרים (קריאה בלבד)
 ```
 
+ובנוסף סקריפט עצמאי להדלקה/כיבוי ישירים של המזגן דרך /smart (בלי ECHONET, בלי
+תלויות - רק python3, עובד גם בלי שהופעל ECHONET):
+
+```bash
+python3 scripts/ac_smart.py --ip 192.168.1.50 status   # מצב מלא (קריאה בלבד)
+python3 scripts/ac_smart.py --ip 192.168.1.50 on       # הדלקה (שומר מצב/טמפ' אחרונים)
+python3 scripts/ac_smart.py --ip 192.168.1.50 off      # כיבוי
+```
+
 ## הרצה בקונטיינר (בלי להתקין כלום על המחשב)
 
 אם לא רוצים להתקין פייתון/חבילות על המחשב, הכלי רץ בקונטיינר (docker או podman -

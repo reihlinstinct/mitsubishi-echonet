@@ -79,6 +79,43 @@ Don't want to install anything? The enable/disable steps are single curl
 commands - see [docs/guide-he.md](docs/guide-he.md) (Hebrew) or the source of
 `src/mitsubishi_echonet/smart.py` (payload constants with provenance).
 
+## Power the AC on/off directly (no ECHONET needed)
+
+`scripts/ac_smart.py` is a single stdlib-only file (Python 3.10+, nothing to
+install) that talks to the adapter's local `/smart` API:
+
+```bash
+python3 scripts/ac_smart.py --ip 192.168.1.50 status       # read-only: full state
+python3 scripts/ac_smart.py --ip 192.168.1.50 on           # power on (keeps last mode/temp)
+python3 scripts/ac_smart.py --ip 192.168.1.50 off          # power off
+python3 scripts/ac_smart.py --ip 192.168.1.50 echonet-test # is ECHONET answering on UDP 3610?
+```
+
+`status` shows the full state the adapter reports: power, mode, set temp,
+fan, vanes, i-See, room/outdoor temps, compressor runtime, error codes,
+energy (current W, lifetime kWh), and adapter info. The on/off frame carries
+only the power bit - mode, temperature and fan are left as the AC has them.
+Verified byte-identical to pymitsubishi's control frames; `/smart` is
+unauthenticated, so trusted networks only.
+
+## Troubleshooting: ECHONET enabled but no UDP replies
+
+Field notes from real use: the `/smart` HTTP path (enable/disable here, and
+`scripts/ac_smart.py` for status/power) is the verified-working path on a
+live MAC-577IF-E (app 40.00) - after `enable`, the adapter's own status
+reply confirms `ECHONET: ON`. If ECHONET is on but UDP 3610 stays silent:
+
+- **Bind port 3610.** These adapters send replies to fixed UDP port 3610,
+  not to your request's source port. A client on an ephemeral port hears
+  nothing; bind 3610 (`scripts/ac_smart.py echonet-test` does this).
+- **Check what arrives.** `sudo tcpdump -i any -n udp port 3610` while
+  probing: a visible reply that the tool does not see means a host firewall
+  (`sudo ufw allow 3610/udp`); no reply at all means the network drops it.
+- **Client isolation.** Guest Wi-Fi and some mesh routers block UDP between
+  clients. Everything must be on the same non-guest network.
+
+If you hit this and solve it differently, please open an issue.
+
 ## How it works
 
 Short version: `enable`/`disable` POST an encrypted XML service command to
