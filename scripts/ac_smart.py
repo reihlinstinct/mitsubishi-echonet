@@ -319,11 +319,14 @@ def _general_lines(data: bytes) -> list[str]:
         parts.append("i-See on")
     if data[17]:
         parts.append(f"dehum {data[17]}")
-    if data[18]:
-        parts.append("power-saving")
-    if data[13]:
-        parts.append(f"remote-lock {data[13]}")
-    return ["AC: " + ", ".join(parts)]
+    parts.append(f"power-saving {'on' if data[18] else 'off'}")
+    lock = data[13]
+    if lock:
+        names = [name for bit, name in ((1, "power"), (2, "mode"), (4, "temp")) if lock & bit]
+        parts.append(f"remote-lock {'+'.join(names)}")
+    else:
+        parts.append("remote-lock off")
+    return ["AC: " + ", ".join(parts), "buzzer: command only (no state in status)"]
 
 
 def _room_temp(data: bytes) -> float:
