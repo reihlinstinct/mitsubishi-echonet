@@ -27,17 +27,22 @@ jobs:
           persist-credentials: false
       - id: filter
         shell: bash
+        env:
+          BASE_REF: ${{ github.base_ref }}
+          EVENT_NAME: ${{ github.event_name }}
         run: |
           # Docs-only pull requests skip the heavy jobs; the Run summary gate
           # still runs and reports them as skipped.
-          if [ "${{ github.event_name }}" != "pull_request" ]; then
+          if [ "$EVENT_NAME" != "pull_request" ]; then
             echo "code=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
-          git diff --name-only "origin/${{ github.base_ref }}...HEAD" | tee /tmp/changed.txt
-          # Doc-only allowlist: markdown, images, license and community
-          # metadata. Anything else (including docs/ app code) runs the suite.
-          if grep -qvEi '\.(md|markdown|rst|png|jpe?g|gif|svg|webp|ico)$|^LICENSE$|^\.github/(ISSUE_TEMPLATE|PULL_REQUEST_TEMPLATE|CODEOWNERS|FUNDING\.yml)' /tmp/changed.txt; then
+          # --no-renames: a code-to-doc rename still shows the deleted code
+          # path, so it cannot masquerade as docs-only.
+          git diff --no-renames --name-only "origin/${BASE_REF}...HEAD" | tee /tmp/changed.txt
+          # Doc-only allowlist: markdown/rst, license and community metadata.
+          # Images always run the suite: docs/ images are app assets.
+          if grep -qvEi '\.(md|markdown|rst)$|^LICENSE$|^\.github/(ISSUE_TEMPLATE|PULL_REQUEST_TEMPLATE|CODEOWNERS|FUNDING\.yml)' /tmp/changed.txt; then
             echo "code=true" >> "$GITHUB_OUTPUT"
           else
             echo "code=false" >> "$GITHUB_OUTPUT"
