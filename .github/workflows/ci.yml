@@ -40,9 +40,10 @@ jobs:
           # --no-renames: a code-to-doc rename still shows the deleted code
           # path, so it cannot masquerade as docs-only.
           git diff --no-renames --name-only "origin/${BASE_REF}...HEAD" | tee /tmp/changed.txt
-          # Doc-only allowlist: markdown/rst, license and community metadata.
-          # Images always run the suite: docs/ images are app assets.
-          if grep -qvEi '\.(md|markdown|rst)$|^LICENSE$|^\.github/(ISSUE_TEMPLATE|PULL_REQUEST_TEMPLATE|CODEOWNERS|FUNDING\.yml)' /tmp/changed.txt; then
+          # Doc-only allowlist: markdown/rst, license, and exact community
+          # metadata names (no prefix matches) - unknown files run the suite.
+          # Images always run: docs/ images are app assets.
+          if grep -qvEi '\.(md|markdown|rst)$|^LICENSE$|^\.github/(CODEOWNERS|dependabot\.yml|FUNDING\.yml)$|^\.github/ISSUE_TEMPLATE/[^/]+\.(md|yml|yaml)$|^\.github/PULL_REQUEST_TEMPLATE(\.md)?$|^\.github/PULL_REQUEST_TEMPLATE/[^/]+\.md$' /tmp/changed.txt; then
             echo "code=true" >> "$GITHUB_OUTPUT"
           else
             echo "code=false" >> "$GITHUB_OUTPUT"
