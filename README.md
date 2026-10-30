@@ -88,6 +88,9 @@ mitsubishi-echonet discover
 mitsubishi-echonet capabilities --ip 192.168.1.50
 ```
 
+Every subcommand takes `--ip` (required except on `discover`) and `--timeout`;
+the CLI also has `--version` (print the version and exit).
+
 Don't want to install anything? The enable/disable steps are single curl
 commands - see [docs/guide-he.md](docs/guide-he.md) (Hebrew) or the source of
 `src/mitsubishi_echonet/smart.py` (payload constants with provenance).
@@ -110,7 +113,8 @@ python3 scripts/ac_smart.py set --ip 192.168.1.50 --dehum 50 --power-saving on
 python3 scripts/ac_smart.py set --ip 192.168.1.50 --remote-lock power,temp   # or: unlock
 python3 scripts/ac_smart.py set --ip 192.168.1.50 --buzzer   # beep the indoor unit
 
-# monitor polls power/energy and appends CSV (or JSON lines with a .json/.jsonl name):
+# monitor polls power/energy and appends CSV (or JSON lines with a .json/.jsonl name;
+# --format csv|json overrides the extension default):
 python3 scripts/ac_smart.py monitor --ip 192.168.1.50 --out energy.csv --interval 30
 
 python3 scripts/ac_smart.py --ip 192.168.1.50 echonet-test # is ECHONET answering on UDP 3610?
