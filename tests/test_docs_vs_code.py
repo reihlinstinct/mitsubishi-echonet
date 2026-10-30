@@ -176,7 +176,11 @@ def test_doc_flags_catches_fake_flag_inline():
 
 
 def test_doc_flags_ignores_wrapper_flags_before_the_invocation():
-    fence = "```bash\ndocker run --rm --network host mitsubishi-echonet status --ip 192.168.1.50\n```\n"
+    fence = (
+        "```bash\n"
+        "docker run --rm --network host mitsubishi-echonet status --ip 192.168.1.50\n"
+        "```\n"
+    )
     found = doc_flags(fence)
     assert "--ip" in found
     assert "--rm" not in found and "--network" not in found
