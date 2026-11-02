@@ -40,6 +40,14 @@
    "evidence": "pip install --no-cache-dir --no-deps .",
    "issue": "https://github.com/reihlinstinct/mitsubishi-echonet/issues/41",
    "reason": "Pre-existing Dockerfile pip install without hash checking; tracked for --require-hashes migration in this issue."
+  },
+  {
+   "path": ".github/workflows/ci.yml",
+   "rule": "job-write",
+   "scope": "alert",
+   "evidence": "issues: write",
+   "issue": "https://github.com/reihlinstinct/mitsubishi-echonet/issues/45",
+   "reason": "Job-scoped issues:write scoped to the alert job, issue #45; runs only on schedule failure, no code or secrets access, no checkout."
   }
  ]
 }
