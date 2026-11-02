@@ -115,7 +115,7 @@ jobs:
 
   alert:
     # Scheduled-run failure opens (or throttled-updates) one alert issue (#45).
-    needs: [changes, lint, test, container]
+    needs: [changes, lint, test, container, summary]
     if: failure() && github.event_name == 'schedule'
     runs-on: ubuntu-24.04
     timeout-minutes: 3
@@ -131,12 +131,25 @@ jobs:
           api="https://api.github.com/repos/$GITHUB_REPOSITORY"
           call() { printf 'header = "Authorization: Bearer %s"\nheader = "Accept: application/vnd.github+json"\n' "$GH_TOKEN" | curl -fsS -K - "$@"; }
           run="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+          # The issue POST fails with 422 when the label does not exist yet;
+          # create it first (tolerate an already-exists 422 from a race).
+          if ! call "$api/labels/ci-alert" >/dev/null; then
+            call -X POST "$api/labels" -d '{"name":"ci-alert","color":"B60205","description":"Automated weekly CI failure alert"}' >/dev/null || true
+          fi
           num=$(call "$api/issues?state=open&labels=ci-alert&per_page=1" | jq -r '.[0].number // empty')
           if [ -z "$num" ]; then
             call -X POST "$api/issues" -d "$(jq -n --arg b "The weekly full CI run failed: $run" '{title:"Weekly full CI run failed",body:$b,labels:["ci-alert"]}')" >/dev/null
           else
-            last=$(call "$api/issues/$num/comments?per_page=100" | jq -r 'if length>0 then .[-1].created_at else empty end')
-            [ -z "$last" ] && last=$(call "$api/issues/$num" | jq -r .created_at)
+            # Latest comment is on the LAST page; compute it from the issue's
+            # comment count so a long-lived issue cannot reset the 24h throttle.
+            meta=$(call "$api/issues/$num")
+            count=$(jq -r .comments <<<"$meta")
+            if [ "$count" -gt 0 ]; then
+              page=$(( (count + 99) / 100 ))
+              last=$(call "$api/issues/$num/comments?per_page=100&page=$page" | jq -r '.[-1].created_at')
+            else
+              last=$(jq -r .created_at <<<"$meta")
+            fi
             age=$(( $(date -u +%s) - $(date -u -d "$last" +%s) ))
             if [ "$age" -ge 86400 ]; then
               call -X POST "$api/issues/$num/comments" -d "$(jq -n --arg b "Still failing: $run" '{body:$b}')" >/dev/null
