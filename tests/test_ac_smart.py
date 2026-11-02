@@ -558,3 +558,17 @@ class TestMonitor:
         out = tmp_path / "log.csv"
         assert ac_smart.cmd_monitor(self._args(str(out), count=1), sleep=lambda s: None) == 0
         assert len(out.read_text().splitlines()) == 2  # header + one good sample
+
+
+def test_python_version_guard_rejects_old(monkeypatch):
+    monkeypatch.setattr(ac_smart.sys, "version_info", (3, 10, 9))
+    try:
+        ac_smart._check_python_version()
+    except SystemExit as exc:
+        assert "requires Python 3.11+" in str(exc)
+    else:  # pragma: no cover
+        raise AssertionError("guard did not exit on Python 3.10")
+
+
+def test_python_version_guard_accepts_current():
+    ac_smart._check_python_version()  # no SystemExit on a supported interpreter

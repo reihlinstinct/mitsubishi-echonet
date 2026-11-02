@@ -8,7 +8,7 @@ version = "0.1.0"
 description = "Enable and verify local ECHONET Lite control on Mitsubishi Electric MAC-577IF-E-class Wi-Fi adapters"
 readme = "README.md"
 license = "MIT"
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 authors = [{ name = "reihlinstinct" }]
 keywords = ["echonet", "echonet-lite", "mitsubishi", "melcloud", "hvac", "home-automation"]
 classifiers = [
@@ -16,6 +16,10 @@ classifiers = [
     "Intended Audience :: Developers",
     "Operating System :: OS Independent",
     "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
     "Topic :: Home Automation",
 ]
 dependencies = []

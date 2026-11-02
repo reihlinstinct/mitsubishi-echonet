@@ -86,3 +86,22 @@ def test_man_pages_cover_exactly_the_shipped_commands():
         f"{cli_spec.PROGRAM}-{c.name}.1" for c in cli_spec.COMMANDS.values()
     }
     assert committed == expected
+
+
+def test_python_version_guard_accepts_current():
+    from mitsubishi_echonet import _check_python_version
+
+    _check_python_version()  # no SystemExit on a supported interpreter
+
+
+def test_python_version_guard_rejects_old(monkeypatch):
+    import mitsubishi_echonet as pkg
+
+    monkeypatch.setattr(pkg._sys, "version_info", (3, 10, 9))
+    try:
+        pkg._check_python_version()
+    except SystemExit as exc:
+        assert "requires Python 3.11+" in str(exc)
+        assert "3.10" in str(exc)
+    else:  # pragma: no cover
+        raise AssertionError("guard did not exit on Python 3.10")

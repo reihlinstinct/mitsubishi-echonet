@@ -3,7 +3,7 @@
 
 Talks to the adapter's unauthenticated local /smart HTTP endpoint (the same
 channel the MELCloud Home app uses on the LAN). No cloud, no dependencies:
-Python 3.10+ standard library only.
+Python 3.11+ standard library only.
 
 Usage (global options work before or after the subcommand):
     python3 ac_smart.py --ip 192.168.88.30 status        # read-only: power, mode, temps, energy
@@ -39,6 +39,27 @@ import sys
 import time
 import urllib.request
 import xml.etree.ElementTree as ET
+
+# --------------------------------------------------------------------------
+# Interpreter guard. Python 3.10 is end-of-life; refuse to run on anything
+# older with a clean message instead of failing later on 3.11-only features.
+# This block deliberately uses only syntax every older Python 3 parses, so
+# the guard itself is always reachable.
+
+MIN_PYTHON = (3, 11)
+
+
+def _check_python_version() -> None:
+    if sys.version_info < MIN_PYTHON:
+        have = ".".join(str(p) for p in sys.version_info[:3])
+        want = ".".join(str(p) for p in MIN_PYTHON)
+        raise SystemExit(
+            f"ac_smart.py requires Python {want}+ (you are running {have}). "
+            "Python 3.10 is end-of-life; please use a newer interpreter."
+        )
+
+
+_check_python_version()
 
 # --------------------------------------------------------------------------
 # AES-128 (pure Python, FIPS-197). Tables are generated, not embedded.

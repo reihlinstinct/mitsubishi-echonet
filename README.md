@@ -32,7 +32,7 @@ Scheduling research (Shabbat clock, timers): [docs/DESIGN-scheduler.md](docs/DES
 
 ## Install
 
-Requires Python 3.10+ and nothing else (standard library only):
+Requires Python 3.11+ and nothing else (standard library only):
 
 ```bash
 pipx install git+https://github.com/reihlinstinct/mitsubishi-echonet.git
@@ -97,7 +97,7 @@ commands - see [docs/guide-he.md](docs/guide-he.md) (Hebrew) or the source of
 
 ## Control the AC directly (no ECHONET needed)
 
-`scripts/ac_smart.py` is a single stdlib-only file (Python 3.10+, nothing to
+`scripts/ac_smart.py` is a single stdlib-only file (Python 3.11+, nothing to
 install) that talks to the adapter's local `/smart` API. Global options
 (`--ip`, `--timeout`) work before or after the subcommand:
 
