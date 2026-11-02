@@ -70,9 +70,15 @@ def test_parser_matches_spec():
             long_flags = [o for o in action.option_strings if o.startswith("--")]
             if not long_flags or "--help" in action.option_strings:
                 continue
-            assert action.metavar == spec_by_flag[long_flags[0]].metavar, (
+            spec_opt = spec_by_flag[long_flags[0]]
+            assert action.metavar == spec_opt.metavar, (
                 f"{name} {long_flags[0]}: parser metavar {action.metavar!r} "
-                f"!= spec {spec_by_flag[long_flags[0]].metavar!r}"
+                f"!= spec {spec_opt.metavar!r}"
+            )
+            expected_default = float(spec_opt.default) if spec_opt.default is not None else None
+            assert action.default == expected_default, (
+                f"{name} {long_flags[0]}: parser default {action.default!r} "
+                f"!= spec {expected_default!r}"
             )
 
 

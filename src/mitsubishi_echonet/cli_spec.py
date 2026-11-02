@@ -22,7 +22,6 @@ from typing import NamedTuple
 
 PROGRAM = "mitsubishi-echonet"
 MANUAL = "Mitsubishi ECHONET Manual"
-MAN_DATE = "November 2026"
 
 PROGRAM_SUMMARY = "local ECHONET Lite control for Mitsubishi Wi-Fi adapters"
 
@@ -60,7 +59,7 @@ class Command(NamedTuple):
 
 
 _IP = Opt("--ip", "IP", "adapter IP address on the local network", required=True)
-_TIMEOUT = Opt("--timeout", "SECONDS", "seconds to wait (default 3)")
+_TIMEOUT = Opt("--timeout", "SECONDS", "seconds to wait (default 3)", default="3")
 
 COMMANDS: dict[str, Command] = {
     c.name: c
@@ -121,7 +120,7 @@ COMMANDS: dict[str, Command] = {
                 "Sends a multicast discovery and prints every ECHONET Lite device "
                 "that answers within the timeout. Exits 1 when no device answers.",
             ),
-            (Opt("--timeout", "SECONDS", "seconds to listen (default 3)"),),
+            (Opt("--timeout", "SECONDS", "seconds to listen (default 3)", default="3"),),
             (
                 (
                     "mitsubishi-echonet discover",

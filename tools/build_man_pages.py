@@ -48,7 +48,7 @@ def page_name(command: str) -> str:
 
 def th(title: str) -> list[str]:
     return [
-        f'.TH "{esc(title.upper())}" "1" "{esc(cli_spec.MAN_DATE)}" '
+        f'.TH "{esc(title.upper())}" "1" "" '
         f'"{esc(cli_spec.PROGRAM)} {esc(__version__)}" "{esc(cli_spec.MANUAL)}"',
     ]
 
@@ -112,7 +112,7 @@ def render(command: cli_spec.Command) -> str:
             suffix = ""
             if opt.required:
                 suffix += " (required)"
-            if opt.default:
+            if opt.default and "(default" not in opt.help:
                 suffix += f" (default: {opt.default})"
             lines.append(text_line(opt.help + suffix))
     if command.examples:

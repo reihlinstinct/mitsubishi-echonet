@@ -10,17 +10,17 @@ from . import __version__, cli_spec, echonet, smart
 
 
 def _add_opt(parser: argparse.ArgumentParser, opt: cli_spec.Opt) -> None:
-    if opt.flag == "--timeout":
+    if opt.default is None:
+        parser.add_argument(opt.flag, metavar=opt.metavar, help=opt.help, required=opt.required)
+    else:
         parser.add_argument(
             opt.flag,
             metavar=opt.metavar,
             type=float,
-            default=3.0,
+            default=float(opt.default),
             help=opt.help,
             required=opt.required,
         )
-    else:
-        parser.add_argument(opt.flag, metavar=opt.metavar, help=opt.help, required=opt.required)
 
 
 def build_parser() -> argparse.ArgumentParser:
