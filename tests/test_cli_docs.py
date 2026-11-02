@@ -65,6 +65,15 @@ def test_parser_matches_spec():
             "--help"
         }
         assert flags == {o.flag for o in cmd.options}, name
+        spec_by_flag = {o.flag: o for o in cmd.options}
+        for action in sub_parser._actions:
+            long_flags = [o for o in action.option_strings if o.startswith("--")]
+            if not long_flags or "--help" in action.option_strings:
+                continue
+            assert action.metavar == spec_by_flag[long_flags[0]].metavar, (
+                f"{name} {long_flags[0]}: parser metavar {action.metavar!r} "
+                f"!= spec {spec_by_flag[long_flags[0]].metavar!r}"
+            )
 
 
 def test_man_pages_up_to_date():

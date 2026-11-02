@@ -58,8 +58,7 @@ def render_overview() -> str:
     lines: list[str] = [HEADER_COMMENT]
     lines += th(cli_spec.PROGRAM)
     lines.append(".SH NAME")
-    summary = "local ECHONET Lite control for Mitsubishi Wi-Fi adapters"
-    lines.append(f"{esc(cli_spec.PROGRAM)} \\- {summary}")
+    lines.append(f"{esc(cli_spec.PROGRAM)} \\- {esc(cli_spec.PROGRAM_SUMMARY)}")
     lines.append(".SH SYNOPSIS")
     lines.append(".B " + esc(f"{cli_spec.PROGRAM} [--version] COMMAND [OPTIONS]"))
     lines.append(".SH DESCRIPTION")
@@ -127,6 +126,11 @@ def render(command: cli_spec.Command) -> str:
     lines.append(".SH EXIT STATUS")
     lines.append(".TP\n.B 0")
     lines.append("Success.")
+    lines.append(".TP\n.B 1")
+    if command.name == "discover":
+        lines.append("No ECHONET Lite device answered within the timeout.")
+    else:
+        lines.append("The command failed (adapter unreachable or command rejected).")
     lines.append(".TP\n.B 2")
     lines.append("Command-line usage error (invalid or missing arguments).")
     lines.append(".SH SEE ALSO")

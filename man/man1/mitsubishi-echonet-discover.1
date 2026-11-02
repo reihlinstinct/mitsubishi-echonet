@@ -10,7 +10,7 @@ Sends a multicast discovery and prints every ECHONET Lite device that answers wi
 .SH OPTIONS
 .TP
 .B \-\-timeout SECONDS
-seconds to listen (default: 3)
+seconds to listen (default 3)
 .SH EXAMPLES
 .PP
 mitsubishi\-echonet discover
@@ -21,6 +21,9 @@ Discover ECHONET Lite devices on the local network.
 .TP
 .B 0
 Success.
+.TP
+.B 1
+No ECHONET Lite device answered within the timeout.
 .TP
 .B 2
 Command-line usage error (invalid or missing arguments).

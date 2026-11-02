@@ -13,7 +13,7 @@ Sends the enable command to the adapter's /smart endpoint. ECHONET Lite has no a
 adapter IP address on the local network (required)
 .TP
 .B \-\-timeout SECONDS
-seconds to wait (default: 3)
+seconds to wait (default 3)
 .SH EXAMPLES
 .PP
 mitsubishi\-echonet enable \-\-ip 192.0.2.10
@@ -24,6 +24,9 @@ Enable ECHONET Lite on the adapter at 192.0.2.10 (documentation IP).
 .TP
 .B 0
 Success.
+.TP
+.B 1
+The command failed (adapter unreachable or command rejected).
 .TP
 .B 2
 Command-line usage error (invalid or missing arguments).
