@@ -6,46 +6,28 @@ import argparse
 import sys
 from collections.abc import Sequence
 
-from . import __version__, echonet, smart
+from . import __version__, cli_spec, echonet, smart
 
 
-def _add_common(parser: argparse.ArgumentParser) -> None:
-    parser.add_argument("--ip", required=True, help="adapter IP address on the local network")
-    parser.add_argument("--timeout", type=float, default=3.0, help="seconds to wait (default 3)")
+def _add_opt(parser: argparse.ArgumentParser, opt: cli_spec.Opt) -> None:
+    if opt.flag == "--timeout":
+        parser.add_argument(opt.flag, type=float, default=3.0, help=opt.help, required=opt.required)
+    else:
+        parser.add_argument(opt.flag, help=opt.help, required=opt.required)
 
 
 def build_parser() -> argparse.ArgumentParser:
+    # Names, help text and structure come from the canonical spec (#54).
     parser = argparse.ArgumentParser(
-        prog="mitsubishi-echonet",
-        description=(
-            "Enable, disable and verify local ECHONET Lite control on Mitsubishi "
-            "Electric MAC-577IF-E-class Wi-Fi adapters. Run only on a trusted "
-            "network: ECHONET Lite has no authentication."
-        ),
+        prog=cli_spec.PROGRAM,
+        description=cli_spec.PROGRAM_DESCRIPTION,
     )
     parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
     sub = parser.add_subparsers(dest="command", required=True)
-
-    enable = sub.add_parser("enable", help="enable ECHONET Lite via the /smart endpoint")
-    _add_common(enable)
-
-    disable = sub.add_parser("disable", help="disable ECHONET Lite via the /smart endpoint")
-    _add_common(disable)
-
-    status = sub.add_parser(
-        "status",
-        help="read-only check: is the adapter reachable and is ECHONET Lite on?",
-    )
-    _add_common(status)
-
-    caps = sub.add_parser(
-        "capabilities",
-        help="read-only: list the adapter's supported ECHONET properties (incl. timers)",
-    )
-    _add_common(caps)
-
-    disc = sub.add_parser("discover", help="multicast discovery of ECHONET Lite devices")
-    disc.add_argument("--timeout", type=float, default=3.0, help="seconds to listen (default 3)")
+    for name, command in cli_spec.COMMANDS.items():
+        cmd_parser = sub.add_parser(name, help=command.summary)
+        for opt in command.options:
+            _add_opt(cmd_parser, opt)
 
     return parser
 

@@ -191,3 +191,21 @@ command our disable payload matches.
 ## License
 
 MIT - see [LICENSE](LICENSE).
+
+## Man pages
+
+The console script and every subcommand have a \-\-help summary and a Linux
+man page under `man/man1/`, generated from the single source of truth
+`src/mitsubishi_echonet/cli_spec.py` (regenerate with
+`python tools/build_man_pages.py`; `tests/test_cli_docs.py` fails on drift):
+
+```sh
+tools/install_man_pages.sh                 # to /usr/local/share/man/man1
+tools/install_man_pages.sh "$HOME/.local"  # per-user install
+man mitsubishi-echonet
+```
+
+A distributable archive comes from `python tools/build_man_pages.py --tarball
+OUT.tar.gz` (deterministic output). Only the shipped console script gets
+pages; internal CI/dev scripts (`scripts/ac_smart.py`, `scripts/ci`,
+`scripts/security`, the Docker entrypoint) are deliberately excluded.
