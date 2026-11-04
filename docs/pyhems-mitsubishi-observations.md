@@ -11,7 +11,7 @@ This checklist prepares optional, read-only observations from a Mitsubishi ECHON
 
 ## Before collecting anything
 
-1. Confirm the unit and ECHONET object class to be observed. The recorded home unit is a Mitsubishi MSZ-GE71VA-E1 with MAC-577IF-E adapter, but issue #49 does not state its device class/model. Do not assume the home unit is the Mitsubishi Air Resort device described in that issue.
+1. Confirm the unit and ECHONET object class to be observed. Issue #49 does not state the device class/model. Do not assume any other Mitsubishi unit is the Mitsubishi Air Resort device described there.
 2. Confirm the adapter is already reachable and ECHONET Lite is already enabled. On the same trusted LAN, `mitsubishi-echonet status --ip <ADAPTER_IP>` is read-only. Do not run `enable`, `disable`, `set`, or any other write command for this task.
 3. Use `mitsubishi-echonet capabilities --ip <ADAPTER_IP>` to inspect the ECHONET GET property map. Only request an EPC if `0x9A` or `0xCF` appears in the GET map. Absence means the adapter does not expose it for GET; record that and stop for that EPC.
 
@@ -19,7 +19,7 @@ This checklist prepares optional, read-only observations from a Mitsubishi ECHON
 
 The project's `src/mitsubishi_echonet/echonet.py` implements ECHONET Lite frames, `query()` and property-map reads. Its CLI does not currently expose arbitrary raw EPC reads, so a small temporary script may call those existing read helpers or construct a single-property GET. Use UDP port 3610 and bind the local socket to port 3610, as described in the [local-control guide](https://github.com/reihlinstinct/mitsubishi-echonet/blob/main/docs/wiki/he-ac-local-control.md#troubleshooting-echonet-enabled-but-no-udp-replies).
 
-For a home air-conditioner object instance `01` (EOJ `01 30 01`), the GET requests below use controller source EOJ `05 FF 01`. Use unique transaction IDs and send one request at a time:
+Only if the device is independently confirmed to expose a home-air-conditioner instance, the GET requests below use EOJ `01 30 01` and controller source EOJ `05 FF 01`. If that class/instance is not confirmed, do not send these frames. Use unique transaction IDs and send one request at a time:
 
 - EPC `0x9A`: `10 81 00 01 05 FF 01 01 30 01 62 01 9A 00`
 - EPC `0xCF`: `10 81 00 02 05 FF 01 01 30 01 62 01 CF 00`
