@@ -69,11 +69,39 @@ class TestStatus:
         assert cli.main(["status", "--ip", "192.0.2.10"]) == 0
         assert "ENABLED" in capsys.readouterr().out
 
-    def test_reachable_but_off(self, monkeypatch: MP, capsys: Cap) -> None:
+    def test_reachable_no_udp_flag_on(self, monkeypatch: MP, capsys: Cap) -> None:
+        # Regression #70: reachable HTTP + no UDP reply is "unknown", never
+        # "OFF" - in the 2026-11-04 incident the adapter was reporting ON here.
         monkeypatch.setattr(echonet, "tcp_reachable", lambda *a, **kw: True)
         monkeypatch.setattr(echonet, "query", lambda *a, **kw: None)
+        monkeypatch.setattr(smart, "query_echonet_flag", lambda *a, **kw: "ON")
         assert cli.main(["status", "--ip", "192.0.2.10"]) == 1
-        assert "OFF" in capsys.readouterr().out
+        out = capsys.readouterr().out
+        assert "no ECHONET reply on UDP 3610" in out
+        assert "ECHONET: ON" in out
+        assert "state unknown" in out
+        assert "is OFF" not in out
+        assert "enable" not in out
+
+    def test_reachable_no_udp_flag_off(self, monkeypatch: MP, capsys: Cap) -> None:
+        # Only the adapter's own OFF report justifies the enable advice.
+        monkeypatch.setattr(echonet, "tcp_reachable", lambda *a, **kw: True)
+        monkeypatch.setattr(echonet, "query", lambda *a, **kw: None)
+        monkeypatch.setattr(smart, "query_echonet_flag", lambda *a, **kw: "OFF")
+        assert cli.main(["status", "--ip", "192.0.2.10"]) == 1
+        out = capsys.readouterr().out
+        assert "ECHONET: OFF" in out
+        assert "enable --ip 192.0.2.10" in out
+
+    def test_reachable_no_udp_flag_unreadable(self, monkeypatch: MP, capsys: Cap) -> None:
+        monkeypatch.setattr(echonet, "tcp_reachable", lambda *a, **kw: True)
+        monkeypatch.setattr(echonet, "query", lambda *a, **kw: None)
+        monkeypatch.setattr(smart, "query_echonet_flag", lambda *a, **kw: None)
+        assert cli.main(["status", "--ip", "192.0.2.10"]) == 1
+        out = capsys.readouterr().out
+        assert "state unknown" in out
+        assert "is OFF" not in out
+        assert "enable" not in out
 
     def test_unreachable(self, monkeypatch: MP, capsys: Cap) -> None:
         monkeypatch.setattr(echonet, "tcp_reachable", lambda *a, **kw: False)
@@ -122,11 +150,18 @@ class TestCapabilitiesCommand:
         assert "No ECHONET timer properties" in capsys.readouterr().out
 
     def test_no_reply_reachable(self, monkeypatch: MP, capsys: Cap) -> None:
+        # Regression #70: no "is OFF" claim and no enable-first advice.
         none_maps = {epc: None for epc in (0x9D, 0x9E, 0x9F)}
         monkeypatch.setattr(echonet, "read_property_maps", lambda ip, **kw: none_maps)
         monkeypatch.setattr(echonet, "tcp_reachable", lambda *a, **kw: True)
+        monkeypatch.setattr(smart, "query_echonet_flag", lambda *a, **kw: "ON")
         assert cli.main(["capabilities", "--ip", "192.0.2.10"]) == 1
-        assert "ECHONET Lite is OFF" in capsys.readouterr().out
+        out = capsys.readouterr().out
+        assert "no ECHONET reply on UDP 3610" in out
+        assert "state unknown" in out
+        assert "ECHONET: ON" in out
+        assert "is OFF" not in out
+        assert "first" not in out
 
     def test_no_reply_unreachable(self, monkeypatch: MP, capsys: Cap) -> None:
         none_maps = {epc: None for epc in (0x9D, 0x9E, 0x9F)}

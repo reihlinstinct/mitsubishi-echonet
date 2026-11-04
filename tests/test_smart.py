@@ -7,7 +7,7 @@ import urllib.error
 
 import pytest
 
-from mitsubishi_echonet import smart
+from mitsubishi_echonet import smart, smart_crypto
 
 
 class FakeResponse:
@@ -113,3 +113,35 @@ class TestPostSmart:
         result = smart.enable_echonet("192.0.2.10", timeout=1.5)
         assert not result.ok
         assert "timed out" in (result.error or "")
+
+
+class TestQueryEchonetFlag:
+    def _reply(self, plain: str) -> smart.SmartResult:
+        body = smart_crypto.encrypt_xml(plain, smart.ADAPTER_KEY)
+        return smart.SmartResult(True, 200, f"<ESV>{body}</ESV>", None)
+
+    def test_reads_flag(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        reply = self._reply("<CSV><CONNECT>ON</CONNECT><ECHONET>ON</ECHONET></CSV>")
+        monkeypatch.setattr(smart, "post_smart", lambda *a, **kw: reply)
+        assert smart.query_echonet_flag("192.0.2.10") == "ON"
+
+    def test_tolerates_trailing_padding(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        # The adapter's reply can carry padding bytes after the XML (#70).
+        reply = self._reply("<CSV>\n    <ECHONET>OFF</ECHONET>\n</CSV>" + "\x10" * 16)
+        monkeypatch.setattr(smart, "post_smart", lambda *a, **kw: reply)
+        assert smart.query_echonet_flag("192.0.2.10") == "OFF"
+
+    def test_unreachable_returns_none(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        fail = smart.SmartResult(False, None, "", "cannot reach")
+        monkeypatch.setattr(smart, "post_smart", lambda *a, **kw: fail)
+        assert smart.query_echonet_flag("192.0.2.10") is None
+
+    def test_missing_flag_returns_none(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        reply = self._reply("<CSV><CONNECT>ON</CONNECT></CSV>")
+        monkeypatch.setattr(smart, "post_smart", lambda *a, **kw: reply)
+        assert smart.query_echonet_flag("192.0.2.10") is None
+
+    def test_undecryptable_returns_none(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        bad = smart.SmartResult(True, 200, "<ESV>!!!</ESV>", None)
+        monkeypatch.setattr(smart, "post_smart", lambda *a, **kw: bad)
+        assert smart.query_echonet_flag("192.0.2.10") is None

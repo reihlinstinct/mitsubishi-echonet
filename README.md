@@ -47,8 +47,9 @@ docker run --rm --network host mitsubishi-echonet status --ip 192.168.1.50
 ```
 
 The image also carries `ac_smart.py`; the entrypoint routes these subcommands
-to it (the CLI's own `status` stays ECHONET-based, so the /smart one is named
-`smart-status`):
+to it (the CLI's own `status` answers from ECHONET probes and only consults
+the adapter's HTTP-reported flag when UDP stays silent, so the /smart one is
+named `smart-status`):
 
 ```bash
 docker run --rm --network host mitsubishi-echonet smart-status --ip 192.168.1.50
@@ -147,6 +148,12 @@ left as the AC has them. Verified byte-identical to pymitsubishi's control
 frames; `/smart` is unauthenticated, so trusted networks only.
 
 ## Troubleshooting: ECHONET enabled but no UDP replies
+
+`status` and `capabilities` never declare ECHONET Lite off from UDP silence
+alone. When the adapter answers on HTTP port 80 but UDP 3610 stays silent,
+they report the state as **unknown** and print the adapter's own HTTP-reported
+flag (`Adapter HTTP status reports ECHONET: ON/OFF`) as a separate fact;
+`enable` is suggested only when the adapter itself reports OFF.
 
 Field notes from real use: the `/smart` HTTP path (enable/disable here, and
 `scripts/ac_smart.py` for status/power) is the verified-working path on a

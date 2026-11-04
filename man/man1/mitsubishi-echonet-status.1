@@ -6,7 +6,7 @@ mitsubishi\-echonet\-status \- read\-only check: is the adapter reachable and is
 .B mitsubishi\-echonet status \-\-ip IP [\-\-timeout SECONDS]
 .SH DESCRIPTION
 .PP
-Read\-only. Reports whether the adapter answers and whether ECHONET Lite control is currently enabled.
+Read\-only. Reports whether the adapter answers and whether ECHONET Lite control is currently enabled. UDP silence alone never proves the setting is off: when the adapter answers on HTTP but not on UDP, the state is reported as unknown together with the adapter's own HTTP\-reported ECHONET flag.
 .SH OPTIONS
 .TP
 .B \-\-ip IP

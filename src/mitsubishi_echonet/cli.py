@@ -58,6 +58,33 @@ def _run_toggle(fn: object, ip: str, timeout: float, verb: str) -> int:
     return 1
 
 
+def _report_no_udp_reply(ip: str, timeout: float) -> None:
+    """Report the reachable-HTTP / silent-UDP state without over-claiming (#70).
+
+    UDP silence alone cannot establish the firmware setting: Wi-Fi client
+    isolation, host firewalls and reply-port binding all drop replies. The
+    adapter's own HTTP-reported ECHONET flag is shown as a separate fact.
+    """
+    print(f"{ip}: adapter reachable on port 80, but no ECHONET reply on UDP 3610.")
+    flag = smart.query_echonet_flag(ip, timeout=timeout)
+    if flag is None:
+        print("Adapter HTTP status did not report an ECHONET flag.")
+        print(
+            "ECHONET Lite state unknown: no UDP reply alone cannot confirm it is off. "
+            f"Cross-check with: scripts/ac_smart.py status --ip {ip}"
+        )
+    elif flag.upper() == "OFF":
+        print("Adapter HTTP status reports ECHONET: OFF.")
+        print(f"ECHONET Lite is off. Run 'mitsubishi-echonet enable --ip {ip}' to switch it on.")
+    else:
+        print(f"Adapter HTTP status reports ECHONET: {flag}.")
+        print(
+            "ECHONET Lite state unknown: the adapter reports it on, so the missing "
+            "replies point at the network (Wi-Fi client isolation or a host firewall), "
+            "not the adapter. See the README troubleshooting section."
+        )
+
+
 def _cmd_status(ip: str, timeout: float) -> int:
     reachable = echonet.tcp_reachable(ip, 80, timeout=timeout)
     reply = echonet.query(ip, timeout=timeout)
@@ -65,7 +92,7 @@ def _cmd_status(ip: str, timeout: float) -> int:
         print(f"{ip}: ECHONET Lite is ENABLED - {echonet.describe(reply.frame)}")
         return 0
     if reachable:
-        print(f"{ip}: adapter reachable on port 80, but no ECHONET reply - ECHONET Lite is OFF.")
+        _report_no_udp_reply(ip, timeout)
         return 1
     print(
         f"{ip}: no ECHONET reply and port 80 unreachable - adapter offline or wrong IP/network.",
@@ -78,8 +105,7 @@ def _cmd_capabilities(ip: str, timeout: float) -> int:
     maps = echonet.read_property_maps(ip, timeout=timeout)
     if all(value is None for value in maps.values()):
         if echonet.tcp_reachable(ip, 80, timeout=timeout):
-            print(f"{ip}: adapter reachable on port 80, but no ECHONET reply")
-            print(f"ECHONET Lite is OFF. Run 'mitsubishi-echonet enable --ip {ip}' first.")
+            _report_no_udp_reply(ip, timeout)
         else:
             print(
                 f"{ip}: no ECHONET reply and port 80 unreachable",

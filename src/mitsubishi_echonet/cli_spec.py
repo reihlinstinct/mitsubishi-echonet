@@ -93,7 +93,10 @@ COMMANDS: dict[str, Command] = {
             "read-only check: is the adapter reachable and is ECHONET Lite on?",
             (
                 "Read-only. Reports whether the adapter answers and whether ECHONET "
-                "Lite control is currently enabled.",
+                "Lite control is currently enabled. UDP silence alone never proves "
+                "the setting is off: when the adapter answers on HTTP but not on "
+                "UDP, the state is reported as unknown together with the adapter's "
+                "own HTTP-reported ECHONET flag.",
             ),
             (_IP, _TIMEOUT),
             (("mitsubishi-echonet status --ip 192.0.2.10", "Check the adapter at 192.0.2.10."),),
