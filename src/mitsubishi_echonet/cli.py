@@ -76,12 +76,18 @@ def _report_no_udp_reply(ip: str, timeout: float) -> None:
     elif flag.upper() == "OFF":
         print("Adapter HTTP status reports ECHONET: OFF.")
         print(f"ECHONET Lite is off. Run 'mitsubishi-echonet enable --ip {ip}' to switch it on.")
-    else:
+    elif flag.upper() == "ON":
         print(f"Adapter HTTP status reports ECHONET: {flag}.")
         print(
             "ECHONET Lite state unknown: the adapter reports it on, so the missing "
             "replies point at the network (Wi-Fi client isolation or a host firewall), "
             "not the adapter. See the README troubleshooting section."
+        )
+    else:
+        print(f"Adapter HTTP status reports an unrecognized ECHONET flag: {flag!r}.")
+        print(
+            "ECHONET Lite state unknown: no UDP reply alone cannot confirm it is off. "
+            f"Cross-check with: scripts/ac_smart.py status --ip {ip}"
         )
 
 

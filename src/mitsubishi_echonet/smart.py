@@ -147,4 +147,7 @@ def query_echonet_flag(
     # The decrypted reply can carry trailing padding bytes, so extract the
     # flag with a regex instead of parsing the document (issue #70).
     flag = _ECHONET_FLAG_RE.search(plain)
-    return flag.group(1) if flag is not None else None
+    if flag is None:
+        return None
+    value = flag.group(1).strip()
+    return value if value else None

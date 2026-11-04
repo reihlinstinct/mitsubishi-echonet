@@ -141,6 +141,11 @@ class TestQueryEchonetFlag:
         monkeypatch.setattr(smart, "post_smart", lambda *a, **kw: reply)
         assert smart.query_echonet_flag("192.0.2.10") is None
 
+    def test_empty_flag_returns_none(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        reply = self._reply("<CSV><ECHONET>  </ECHONET></CSV>")
+        monkeypatch.setattr(smart, "post_smart", lambda *a, **kw: reply)
+        assert smart.query_echonet_flag("192.0.2.10") is None
+
     def test_undecryptable_returns_none(self, monkeypatch: pytest.MonkeyPatch) -> None:
         bad = smart.SmartResult(True, 200, "<ESV>!!!</ESV>", None)
         monkeypatch.setattr(smart, "post_smart", lambda *a, **kw: bad)

@@ -93,6 +93,18 @@ class TestStatus:
         assert "ECHONET: OFF" in out
         assert "enable --ip 192.0.2.10" in out
 
+    def test_reachable_no_udp_flag_unrecognized(self, monkeypatch: MP, capsys: Cap) -> None:
+        # A garbage flag value must not be paraphrased as "reports it on".
+        monkeypatch.setattr(echonet, "tcp_reachable", lambda *a, **kw: True)
+        monkeypatch.setattr(echonet, "query", lambda *a, **kw: None)
+        monkeypatch.setattr(smart, "query_echonet_flag", lambda *a, **kw: "2")
+        assert cli.main(["status", "--ip", "192.0.2.10"]) == 1
+        out = capsys.readouterr().out
+        assert "unrecognized ECHONET flag: '2'" in out
+        assert "state unknown" in out
+        assert "reports it on" not in out
+        assert "is OFF" not in out
+
     def test_reachable_no_udp_flag_unreadable(self, monkeypatch: MP, capsys: Cap) -> None:
         monkeypatch.setattr(echonet, "tcp_reachable", lambda *a, **kw: True)
         monkeypatch.setattr(echonet, "query", lambda *a, **kw: None)
