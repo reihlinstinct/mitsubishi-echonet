@@ -26,3 +26,7 @@ Thanks for helping improve mitsubishi-echonet. Everything in this repo is public
 - Code and documentation are written in English unless the repo says
   otherwise; user-facing text may be Hebrew where the audience is Hebrew.
 - Every bug fix lands with a regression test.
+
+## File placement (enforced)
+
+Decide where a file lives BEFORE creating it. The contract in `.repo-layout.yml` lists the allowed top-level directories, the file types permitted in each, and the required community-standards files; `python tools/check_repo_layout.py` enforces it in CI. A new kind of file means updating the contract in the same PR.
