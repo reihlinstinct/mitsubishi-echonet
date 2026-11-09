@@ -1,0 +1,40 @@
+name: Code layout (advisory)
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  layout:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - id: guard
+        uses: reihlinstinct/repo-checks/actions/code-layout@c2f8c84fbe0f336bf7cedae46547cc4645e807d5 # v1.1.1
+        with:
+          checkout-root: ${{ github.workspace }}
+        continue-on-error: true
+      - name: Report findings
+        if: always()
+        env:
+          GUARD_OUTCOME: ${{ steps.guard.outcome }}
+          GUARD_RESULT: ${{ steps.guard.outputs.result }}
+        run: |
+          {
+            echo '## Code layout (advisory)'
+            echo
+            echo "Check outcome: $GUARD_OUTCOME"
+            echo
+            echo '```json'
+            echo "$GUARD_RESULT"
+            echo '```'
+            echo
+            echo 'Advisory mode: findings are reported, not enforced. Standard: collaboration-docs docs/CODE-LAYOUT.md.'
+          } >> "$GITHUB_STEP_SUMMARY"
