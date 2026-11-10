@@ -15,6 +15,7 @@ UDP 3610 - no cloud - through anything that speaks ECHONET Lite: Home Assistant
 HomeKit), and others. MELCloud / MELCloud Home keeps working in parallel.
 
 Hebrew step-by-step guide: the [wiki](https://github.com/reihlinstinct/mitsubishi-echonet/wiki) (source: [docs/wiki/he-ac-local-control.md](docs/wiki/he-ac-local-control.md), PR-reviewed).
+French step-by-step guide (machine draft, needs native review): the same [wiki](https://github.com/reihlinstinct/mitsubishi-echonet/wiki) (source: [docs/wiki/fr-ac-local-control.md](docs/wiki/fr-ac-local-control.md)).
 Design and protocol notes: [docs/DESIGN.md](docs/DESIGN.md).
 Scheduling research (Shabbat clock, timers): [docs/DESIGN-scheduler.md](docs/DESIGN-scheduler.md).
 

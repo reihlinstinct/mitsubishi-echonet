@@ -7,6 +7,11 @@
 
 - [שליטה מקומית במזגן מיצובישי - מדריך צעד אחר צעד](he-ac-local-control)
 
+## Français
+
+- [Contrôle local d'un climatiseur Mitsubishi - guide pas à pas](fr-ac-local-control)
+  (brouillon de traduction automatique, à relire)
+
 התיעוד הקנוני (התקנה, עיצוב, פרוטוקול, מחקר תזמון) נשאר בריפו, ב
 [README ובתיקיית docs](https://github.com/reihlinstinct/mitsubishi-echonet).
 
