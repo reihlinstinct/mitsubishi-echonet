@@ -1,0 +1,46 @@
+{
+  "mappings": [
+    {
+      "pattern": "src/**",
+      "checks": [
+        "lint",
+        "test",
+        "container"
+      ]
+    },
+    {
+      "pattern": "tests/**",
+      "checks": [
+        "lint",
+        "test"
+      ]
+    },
+    {
+      "pattern": "Dockerfile",
+      "checks": [
+        "container"
+      ]
+    },
+    {
+      "pattern": "docker/**",
+      "checks": [
+        "container"
+      ]
+    },
+    {
+      "pattern": "scripts/ac_smart.py",
+      "checks": [
+        "test",
+        "container"
+      ]
+    },
+    {
+      "pattern": "pyproject.toml",
+      "checks": [
+        "lint",
+        "test",
+        "container"
+      ]
+    }
+  ]
+}

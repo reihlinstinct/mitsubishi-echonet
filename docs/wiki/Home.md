@@ -1,0 +1,20 @@
+# מדריכי משתמש בעברית - mitsubishi-echonet
+
+ברוכים הבאים לוויקי. כאן מרוכזים מדריכי משתמש ו"איך עושים" בעברית, לשליטה
+מקומית במזגן מיצובישי (MAC-577IF-E וקרוביו) דרך ECHONET Lite - בלי ענן.
+
+## המדריכים
+
+- [שליטה מקומית במזגן מיצובישי - מדריך צעד אחר צעד](he-ac-local-control)
+
+## Français
+
+- [Contrôle local d'un climatiseur Mitsubishi - guide pas à pas](fr-ac-local-control)
+  (brouillon de traduction automatique, à relire)
+
+התיעוד הקנוני (התקנה, עיצוב, פרוטוקול, מחקר תזמון) נשאר בריפו, ב
+[README ובתיקיית docs](https://github.com/reihlinstinct/mitsubishi-echonet).
+
+> הערה: הוויקי הוא עותק לקריאה בלבד של התיקייה `docs/wiki/` בריפו, ומתעדכן
+> ממנה אוטומטית. שינויים מתקבלים דרך Pull Request בלבד; עריכה ישירה כאן
+> תידרס בסנכרון הבא.

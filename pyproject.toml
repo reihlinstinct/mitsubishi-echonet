@@ -1,0 +1,63 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "mitsubishi-echonet"
+version = "0.1.0"
+description = "Enable and verify local ECHONET Lite control on Mitsubishi Electric MAC-577IF-E-class Wi-Fi adapters"
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.11"
+authors = [{ name = "reihlinstinct" }]
+keywords = ["echonet", "echonet-lite", "mitsubishi", "melcloud", "hvac", "home-automation"]
+classifiers = [
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Topic :: Home Automation",
+]
+dependencies = []
+
+[project.urls]
+Repository = "https://github.com/reihlinstinct/mitsubishi-echonet"
+Issues = "https://github.com/reihlinstinct/mitsubishi-echonet/issues"
+
+[project.scripts]
+mitsubishi-echonet = "mitsubishi_echonet.cli:run"
+
+[dependency-groups]
+dev = [
+    "pytest>=9.2.0",
+    "pytest-cov>=7.1.0",
+    "ruff>=0.17.3",
+    "mypy>=2.4.1",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/mitsubishi_echonet"]
+
+[tool.ruff]
+extend-exclude = ["scripts/security/scorecard_guard.py", "tests/security/test_scorecard_guard.py"]
+target-version = "py311"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM", "W"]
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+mypy_path = "src"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "--cov=mitsubishi_echonet --cov-report=term-missing --cov-fail-under=80"
+
+[tool.coverage.run]
+source = ["src/mitsubishi_echonet"]
