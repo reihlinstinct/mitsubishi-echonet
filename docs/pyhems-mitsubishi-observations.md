@@ -6,18 +6,18 @@ This checklist prepares optional, read-only observations from a Mitsubishi ECHON
 
 - [pyhems PR #80](https://github.com/sayurin/pyhems/pull/80) is waiting for the HEMS integration interface alignment. The maintainer asked us to wait; do not extend the change until the interface contract is ready.
 - [pyhems issue #79](https://github.com/sayurin/pyhems/issues/79) is the related time/duration/date/date-time type work. It is tied to PR #80, not a separate unblocked task.
-- [pyhems issue #49](https://github.com/sayurin/pyhems/issues/49) asks for more evidence about Mitsubishi Air Resort values, including tentative interpretations of EPC `0xCF` and `0x9A`.
+- [pyhems issue #49](https://github.com/sayurin/pyhems/issues/49) is closed: the maintainer asked Nov 13 whether EPC `0xCF` belongs to the `0x0F01` Mitsubishi Air Resort body, the reporter confirmed Nov 14 it is a unit-side property, and [PR #95](https://github.com/sayurin/pyhems/pull/95) closed #49 on Nov 14.
 - The [HEMS integration repository](https://github.com/sayurin/hems_echonet_lite) currently has no open issues or PRs. Its latest release is [v0.9.0](https://github.com/sayurin/hems_echonet_lite/releases/tag/v0.9.0), after [PR #134](https://github.com/sayurin/hems_echonet_lite/pull/134) adopted pyhems's refactor and [PR #135](https://github.com/sayurin/hems_echonet_lite/pull/135) updated the pyhems dependency. These recent integration changes are why we should avoid overlapping work until a concrete need is identified.
 
 ## Before collecting anything
 
-1. Confirm the unit and ECHONET object class to be observed. Issue #49 does not state the device class/model. Do not assume any other Mitsubishi unit is the Mitsubishi Air Resort device described there.
+1. Confirm the unit and ECHONET object class to be observed. Issue #49 did include an EPC `0x8C` model-string readout (`VL-616HPF`), while the `0x0F01` Mitsubishi Air Resort class applicability was only confirmed later. The pyhems maintainer asked on Nov 13 whether EPC `0xCF` belongs to the `0x0F01` Mitsubishi Air Resort body, the reporter confirmed on Nov 14 that it is a unit-side property, and [PR #95](https://github.com/sayurin/pyhems/pull/95) closed #49 on Nov 14. Those upstream reports do not establish the class or model of any local adapter or unit inspected here; verify it independently before collecting observations.
 2. Confirm the adapter is already reachable and ECHONET Lite is already enabled. On the same trusted LAN, `mitsubishi-echonet status --ip <ADAPTER_IP>` is read-only. Do not run `enable`, `disable`, `set`, or any other write command for this task.
 3. Use `mitsubishi-echonet capabilities --ip <ADAPTER_IP>` to inspect the ECHONET GET property map. Only request an EPC if `0x9A` or `0xCF` appears in the GET map. Absence means the adapter does not expose it for GET; record that and stop for that EPC.
 
 ## Read-only GET procedure
 
-The project's `src/mitsubishi_echonet/echonet.py` implements ECHONET Lite frames, `query()` and property-map reads. Its CLI does not currently expose arbitrary raw EPC reads, so a small temporary script may call those existing read helpers or construct a single-property GET. Use UDP port 3610 and bind the local socket to port 3610, as described in the [local-control guide](https://github.com/reihlinstinct/mitsubishi-echonet/blob/main/docs/wiki/he-ac-local-control.md#troubleshooting-echonet-enabled-but-no-udp-replies).
+The project's `src/mitsubishi_echonet/echonet.py` implements ECHONET Lite frames, `query()` and property-map reads. Its CLI does not currently expose arbitrary raw EPC reads, so a small temporary script may call those existing read helpers or construct a single-property GET. Use UDP port 3610 and bind the local socket to port 3610, as described in the [local-control guide](https://github.com/reihlinstinct/mitsubishi-echonet/blob/main/docs/wiki/he-ac-local-control.md) and the [README troubleshooting section](https://github.com/reihlinstinct/mitsubishi-echonet/blob/main/README.md#troubleshooting-echonet-enabled-but-no-udp-replies).
 
 Only if the device is independently confirmed to expose a home-air-conditioner instance, the GET requests below use EOJ `01 30 01` and controller source EOJ `05 FF 01`. If that class/instance is not confirmed, do not send these frames. Use unique transaction IDs and send one request at a time:
 
